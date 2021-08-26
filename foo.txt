@@ -1,0 +1,635 @@
+[1mdiff --git a/cmd/faucet/faucet.go b/cmd/faucet/faucet.go[m
+[1mindex 5aab7598a..e89502de9 100644[m
+[1m--- a/cmd/faucet/faucet.go[m
+[1m+++ b/cmd/faucet/faucet.go[m
+[36m@@ -288,7 +288,7 @@[m [mfunc newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network ui[m
+ 	cfg.NetworkId = network[m
+ 	cfg.Genesis = genesis[m
+ 	utils.SetDNSDiscoveryDefaults(&cfg, genesis.ToBlock(nil).Hash())[m
+[31m-[m
+[32m+[m	[32mlog.Info("NewFaucet 291!!!")[m
+ 	lesBackend, err := les.New(stack, &cfg)[m
+ 	if err != nil {[m
+ 		return nil, fmt.Errorf("Failed to register the Ethereum service: %w", err)[m
+[1mdiff --git a/cmd/geth/chaincmd.go b/cmd/geth/chaincmd.go[m
+[1mindex 1152bfdfd..c643763f3 100644[m
+[1m--- a/cmd/geth/chaincmd.go[m
+[1m+++ b/cmd/geth/chaincmd.go[m
+[36m@@ -195,7 +195,10 @@[m [mUse "ethereum dump 0" to dump the genesis block.`,[m
+ // the zero'd block (i.e. genesis) or will fail hard if it can't succeed.[m
+ func initGenesis(ctx *cli.Context) error {[m
+ 	// Make sure we have a valid genesis JSON[m
+[32m+[m	[32mfmt.Println(ctx)[m
+[32m+[m	[32mlog.Info("InitGenesis 198!!!")[m
+ 	genesisPath := ctx.Args().First()[m
+[32m+[m	[32mlog.Info(genesisPath)[m
+ 	if len(genesisPath) == 0 {[m
+ 		utils.Fatalf("Must supply path to genesis JSON file")[m
+ 	}[m
+[36m@@ -214,7 +217,7 @@[m [mfunc initGenesis(ctx *cli.Context) error {[m
+ 	defer stack.Close()[m
+ [m
+ 	for _, name := range []string{"chaindata", "lightchaindata"} {[m
+[31m-		chaindb, err := stack.OpenDatabase(name, 0, 0, "", false)[m
+[32m+[m		[32mchaindb, err := stack.OpenDatabaseWithFreezer(name, 0, 0, "", "", false)[m
+ 		if err != nil {[m
+ 			utils.Fatalf("Failed to open database: %v", err)[m
+ 		}[m
+[1mdiff --git a/cmd/geth/main.go b/cmd/geth/main.go[m
+[1mindex d383d99b7..7a4ed59e4 100644[m
+[1m--- a/cmd/geth/main.go[m
+[1m+++ b/cmd/geth/main.go[m
+[36m@@ -319,6 +319,7 @@[m [mfunc geth(ctx *cli.Context) error {[m
+ 	}[m
+ [m
+ 	prepare(ctx)[m
+[32m+[m	[32mlog.Info("Starting make FULLNODE!")[m
+ 	stack, backend := makeFullNode(ctx)[m
+ 	defer stack.Close()[m
+ [m
+[1mdiff --git a/cmd/utils/flags.go b/cmd/utils/flags.go[m
+[1mindex 8197b8cea..f65881c80 100644[m
+[1m--- a/cmd/utils/flags.go[m
+[1m+++ b/cmd/utils/flags.go[m
+[36m@@ -1758,6 +1758,7 @@[m [mfunc RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (ethapi.Backend[m
+ 		stack.RegisterAPIs(tracers.APIs(backend.ApiBackend))[m
+ 		return backend.ApiBackend, nil[m
+ 	}[m
+[32m+[m	[32mlog.Info("ResigEthservice1761!!!")[m
+ 	backend, err := eth.New(stack, cfg)[m
+ 	if err != nil {[m
+ 		Fatalf("Failed to register the Ethereum service: %v", err)[m
+[36m@@ -1846,6 +1847,7 @@[m [mfunc MakeChainDatabase(ctx *cli.Context, stack *node.Node, readonly bool) ethdb.[m
+ 		chainDb, err = stack.OpenDatabase(name, cache, handles, "", readonly)[m
+ 	} else {[m
+ 		name := "chaindata"[m
+[32m+[m		[32mlog.Info("MakeChainDatabase 1849!!!")[m
+ 		chainDb, err = stack.OpenDatabaseWithFreezer(name, cache, handles, ctx.GlobalString(AncientFlag.Name), "", readonly)[m
+ 	}[m
+ 	if err != nil {[m
+[1mdiff --git a/consensus/clique/clique.go b/consensus/clique/clique.go[m
+[1mindex dfec81f6a..f39499624 100644[m
+[1m--- a/consensus/clique/clique.go[m
+[1m+++ b/consensus/clique/clique.go[m
+[36m@@ -317,9 +317,11 @@[m [mfunc (c *Clique) verifyCascadingFields(chain consensus.ChainHeaderReader, header[m
+ 	if len(parents) > 0 {[m
+ 		parent = parents[len(parents)-1][m
+ 	} else {[m
+[32m+[m		[32mlog.Info("PARENT LINE 320!!!")[m
+ 		parent = chain.GetHeader(header.ParentHash, number-1)[m
+ 	}[m
+ 	if parent == nil || parent.Number.Uint64() != number-1 || parent.Hash() != header.ParentHash {[m
+[32m+[m		[32mlog.Info("PARENT LINE 324!!!")[m
+ 		return consensus.ErrUnknownAncestor[m
+ 	}[m
+ 	if parent.Time+c.config.Period > header.Time {[m
+[1mdiff --git a/consensus/ethash/consensus.go b/consensus/ethash/consensus.go[m
+[1mindex c32e0ec3c..497fb3dc0 100644[m
+[1m--- a/consensus/ethash/consensus.go[m
+[1m+++ b/consensus/ethash/consensus.go[m
+[36m@@ -32,6 +32,7 @@[m [mimport ([m
+ 	"github.com/ethereum/go-ethereum/consensus/misc"[m
+ 	"github.com/ethereum/go-ethereum/core/state"[m
+ 	"github.com/ethereum/go-ethereum/core/types"[m
+[32m+[m	[32m"github.com/ethereum/go-ethereum/log"[m
+ 	"github.com/ethereum/go-ethereum/params"[m
+ 	"github.com/ethereum/go-ethereum/rlp"[m
+ 	"github.com/ethereum/go-ethereum/trie"[m
+[36m@@ -111,6 +112,7 @@[m [mfunc (ethash *Ethash) VerifyHeader(chain consensus.ChainHeaderReader, header *ty[m
+ // a results channel to retrieve the async verifications.[m
+ func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {[m
+ 	// If we're running a full engine faking, accept any input as valid[m
+[32m+[m	[32mlog.Info("GOINTO ethashVERIFYHEADERs LINE115")[m
+ 	if ethash.config.PowMode == ModeFullFake || len(headers) == 0 {[m
+ 		abort, results := make(chan struct{}), make(chan error, len(headers))[m
+ 		for i := 0; i < len(headers); i++ {[m
+[1mdiff --git a/consensus/parlia/parlia.go b/consensus/parlia/parlia.go[m
+[1mindex 62d109848..b3a7f203b 100644[m
+[1m--- a/consensus/parlia/parlia.go[m
+[1m+++ b/consensus/parlia/parlia.go[m
+[36m@@ -299,6 +299,7 @@[m [mfunc (p *Parlia) VerifyHeader(chain consensus.ChainHeaderReader, header *types.H[m
+ // method returns a quit channel to abort the operations and a results channel to[m
+ // retrieve the async verifications (the order is that of the input slice).[m
+ func (p *Parlia) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {[m
+[32m+[m	[32mlog.Info("GOINTO PArlia verifyheader Line 302 !!!")[m
+ 	abort := make(chan struct{})[m
+ 	results := make(chan error, len(headers))[m
+ [m
+[36m@@ -385,12 +386,15 @@[m [mfunc (p *Parlia) verifyCascadingFields(chain consensus.ChainHeaderReader, header[m
+ [m
+ 	var parent *types.Header[m
+ 	if len(parents) > 0 {[m
+[32m+[m		[32mlog.Info("PARENT LENGTH LARGER THAN 0 !!!")[m
+ 		parent = parents[len(parents)-1][m
+ 	} else {[m
+[32m+[m		[32mlog.Info("PARENT LENGTH NO LARGER THAN 0 !!!")[m
+ 		parent = chain.GetHeader(header.ParentHash, number-1)[m
+ 	}[m
+ [m
+ 	if parent == nil || parent.Number.Uint64() != number-1 || parent.Hash() != header.ParentHash {[m
+[32m+[m		[32mlog.Info("PARENT ERROR!!!")[m
+ 		return consensus.ErrUnknownAncestor[m
+ 	}[m
+ [m
+[1mdiff --git a/core/blockchain.go b/core/blockchain.go[m
+[1mindex c67ac3d15..bc2f3a5d0 100644[m
+[1m--- a/core/blockchain.go[m
+[1m+++ b/core/blockchain.go[m
+[36m@@ -337,6 +337,7 @@[m [mfunc NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par[m
+ 			}[m
+ 		}[m
+ 	}[m
+[32m+[m	[32mlog.Info("VerifyHeader 340!!!")[m
+ 	// The first thing the node will do is reconstruct the verification data for[m
+ 	// the head block (ethash cache or clique voting snapshot). Might as well do[m
+ 	// it in advance.[m
+[36m@@ -427,14 +428,22 @@[m [mfunc (bc *BlockChain) empty() bool {[m
+ // assumes that the chain manager mutex is held.[m
+ func (bc *BlockChain) loadLastState() error {[m
+ 	// Restore the last known head block[m
+[31m-	head := rawdb.ReadHeadBlockHash(bc.db)[m
+[32m+[m	[32msize, _ := bc.db.Ancients()[m
+[32m+[m	[32mlog.Info("Sizewas !!!")[m
+[32m+[m	[32mlog.Info(string(size))[m
+[32m+[m
+[32m+[m	[32mhead := rawdb.ReadCanonicalHash(bc.db, size-1)[m
+[32m+[m	[32mlog.Info(head.String())[m
+[32m+[m	[32m//head := rawdb.ReadHeadBlockHash(bc.db)[m
+[32m+[m	[32m//rawdb.ReadHeader(db, rawdb.ReadCanonicalHash(db, 0), 0)[m
+ 	if head == (common.Hash{}) {[m
+ 		// Corrupt or empty database, init from scratch[m
+ 		log.Warn("Empty database, resetting chain")[m
+ 		return bc.Reset()[m
+ 	}[m
+ 	// Make sure the entire head block is available[m
+[31m-	currentBlock := bc.GetBlockByHash(head)[m
+[32m+[m	[32m//currentBlock := bc.GetBlockByHash(head)[m
+[32m+[m	[32mcurrentBlock := rawdb.ReadBlock(bc.db, head, size-1)[m
+ 	if currentBlock == nil {[m
+ 		// Corrupt or empty database, init from scratch[m
+ 		log.Warn("Head block missing, resetting chain", "hash", head)[m
+[36m@@ -1472,12 +1481,14 @@[m [mfunc (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.[m
+ // writeBlockWithState writes the block and all associated state to the database,[m
+ // but is expects the chain mutex to be held.[m
+ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.Receipt, logs []*types.Log, state *state.StateDB, emitHeadEvent bool) (status WriteStatus, err error) {[m
+[32m+[m	[32mlog.Info("WRITEBLOCK WITH STATE 1475!!!")[m
+ 	bc.wg.Add(1)[m
+ 	defer bc.wg.Done()[m
+ [m
+ 	// Calculate the total difficulty of the block[m
+ 	ptd := bc.GetTd(block.ParentHash(), block.NumberU64()-1)[m
+ 	if ptd == nil {[m
+[32m+[m		[32mlog.Info("PTD IS NULL!!!")[m
+ 		return NonStatTy, consensus.ErrUnknownAncestor[m
+ 	}[m
+ 	// Make sure no inconsistent state is leaked during insertion[m
+[36m@@ -1486,18 +1497,31 @@[m [mfunc (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.[m
+ 	externTd := new(big.Int).Add(block.Difficulty(), ptd)[m
+ [m
+ 	wg := sync.WaitGroup{}[m
+[31m-[m
+[31m-	//For the stateDB, only store state data and no block data. Instead, write the block data[m
+[31m-	//directly into Ancient DB[m
+[31m-	rawdb.WriteAncientBlock(bc.db, block, receipts, ptd)[m
+[32m+[m	[32mwg.Add(1)[m
+[32m+[m	[32mgo func() {[m
+[32m+[m		[32mblockBatch := bc.db.NewBatch()[m
+[32m+[m		[32m//	rawdb.WriteTd(blockBatch, block.Hash(), block.NumberU64(), externTd)[m
+[32m+[m		[32m//rawdb.WriteBlock(blockBatch, block)[m
+[32m+[m		[32m//rawdb.WriteReceipts(blockBatch, block.Hash(), block.NumberU64(), receipts)[m
+[32m+[m		[32mrawdb.WritePreimages(blockBatch, state.Preimages())[m
+[32m+[m		[32mif err := blockBatch.Write(); err != nil {[m
+[32m+[m			[32mlog.Crit("Failed to write block into disk", "err", err)[m
+[32m+[m		[32m}[m
+[32m+[m		[32mrawdb.WriteAncientBlock(bc.db, block, receipts, ptd)[m
+[32m+[m		[32mwg.Done()[m
+[32m+[m	[32m}()[m
+ [m
+ 	// Commit all cached state changes into underlying memory database.[m
+ 	root, err := state.Commit(bc.chainConfig.IsEIP158(block.Number()))[m
+ 	if err != nil {[m
+[32m+[m		[32mlog.Info("STATE COMMIT ERROR !!!")[m
+ 		return NonStatTy, err[m
+ 	}[m
+ 	triedb := bc.stateCache.TrieDB()[m
+ [m
+[32m+[m	[32m//For the stateDB, only store state data and no block data. Instead, write the block data[m
+[32m+[m	[32m//directly into Ancient DB[m
+[32m+[m
+ 	// If we're running an archive node, always flush[m
+ 	if bc.cacheConfig.TrieDirtyDisabled {[m
+ 		if err := triedb.Commit(root, false, nil); err != nil {[m
+[36m@@ -1693,6 +1717,12 @@[m [mfunc (bc *BlockChain) InsertChainWithoutSealVerification(block *types.Block) (in[m
+ // completes, then the historic state could be pruned again[m
+ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, error) {[m
+ 	// If the chain is terminating, don't even bother starting up[m
+[32m+[m	[32ml := len(chain)[m
+[32m+[m	[32mlog.Info("LNEGTH IS !!!")[m
+[32m+[m	[32mlog.Info(string(l))[m
+[32m+[m	[32mfmt.Println("LENGTH!!!")[m
+[32m+[m	[32mfmt.Println(len(chain))[m
+[32m+[m
+ 	if atomic.LoadInt32(&bc.procInterrupt) == 1 {[m
+ 		return 0, nil[m
+ 	}[m
+[36m@@ -1792,6 +1822,8 @@[m [mfunc (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er[m
+ 	case err != nil:[m
+ 		bc.futureBlocks.Remove(block.Hash())[m
+ 		stats.ignored += len(it.chain)[m
+[32m+[m		[32mlog.Info("LINE1809!!!")[m
+[32m+[m		[32mlog.Info(err.Error())[m
+ 		bc.reportBlock(block, nil, err)[m
+ 		return it.index, err[m
+ 	}[m
+[36m@@ -1815,6 +1847,7 @@[m [mfunc (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er[m
+ 		}[m
+ 		// If the header is a banned one, straight out abort[m
+ 		if BadHashes[block.Hash()] {[m
+[32m+[m			[32mlog.Info("LINE1833!!!")[m
+ 			bc.reportBlock(block, nil, ErrBlacklistedHash)[m
+ 			return it.index, ErrBlacklistedHash[m
+ 		}[m
+[36m@@ -1876,6 +1909,8 @@[m [mfunc (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er[m
+ 		substart := time.Now()[m
+ 		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)[m
+ 		if err != nil {[m
+[32m+[m			[32mlog.Info(err.Error())[m
+[32m+[m			[32mlog.Info("LINE1895!!!")[m
+ 			bc.reportBlock(block, receipts, err)[m
+ 			return it.index, err[m
+ 		}[m
+[36m@@ -1896,6 +1931,7 @@[m [mfunc (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er[m
+ 		// Validate the state using the default validator[m
+ 		substart = time.Now()[m
+ 		if err := bc.validator.ValidateState(block, statedb, receipts, usedGas); err != nil {[m
+[32m+[m			[32mlog.Info("LINE 1916!!!")[m
+ 			bc.reportBlock(block, receipts, err)[m
+ 			log.Error("validate state failed", "error", err)[m
+ 			return it.index, err[m
+[36m@@ -1912,6 +1948,8 @@[m [mfunc (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er[m
+ 		substart = time.Now()[m
+ 		status, err := bc.writeBlockWithState(block, receipts, logs, statedb, false)[m
+ 		if err != nil {[m
+[32m+[m			[32mlog.Info("WRITEBLOCKWITHSTATEERROR!!!")[m
+[32m+[m			[32mlog.Info(err.Error())[m
+ 			return it.index, err[m
+ 		}[m
+ 		// Update the metrics touched during block commit[m
+[36m@@ -2394,6 +2432,7 @@[m [mError: %v[m
+ // of the header retrieval mechanisms already need to verify nonces, as well as[m
+ // because nonces can be verified sparsely, not needing to check each.[m
+ func (bc *BlockChain) InsertHeaderChain(chain []*types.Header, checkFreq int) (int, error) {[m
+[32m+[m	[32mlog.Info("Insert HeaderChain 2427!!!")[m
+ 	start := time.Now()[m
+ 	if i, err := bc.hc.ValidateHeaderChain(chain, checkFreq); err != nil {[m
+ 		return i, err[m
+[1mdiff --git a/core/blockchain_insert.go b/core/blockchain_insert.go[m
+[1mindex cb8473c08..5e5b9f9bb 100644[m
+[1m--- a/core/blockchain_insert.go[m
+[1m+++ b/core/blockchain_insert.go[m
+[36m@@ -17,6 +17,7 @@[m
+ package core[m
+ [m
+ import ([m
+[32m+[m	[32m"fmt"[m
+ 	"time"[m
+ [m
+ 	"github.com/ethereum/go-ethereum/common"[m
+[36m@@ -112,9 +113,13 @@[m [mfunc (it *insertIterator) next() (*types.Block, error) {[m
+ 	// Advance the iterator and wait for verification result if not yet done[m
+ 	it.index++[m
+ 	if len(it.errors) <= it.index {[m
+[32m+[m		[32mlog.Info("LINE115 ofNEXT()!!!")[m
+ 		it.errors = append(it.errors, <-it.results)[m
+ 	}[m
+ 	if it.errors[it.index] != nil {[m
+[32m+[m		[32mlog.Info("LINE119 ofNEXT()!!!")[m
+[32m+[m		[32mfmt.Println(it.errors[it.index])[m
+[32m+[m		[32mfmt.Println("LINE122!!!")[m
+ 		return it.chain[it.index], it.errors[it.index][m
+ 	}[m
+ 	// Block header valid, run body validation and return[m
+[1mdiff --git a/core/genesis.go b/core/genesis.go[m
+[1mindex 930352294..dbf42f3b3 100644[m
+[1m--- a/core/genesis.go[m
+[1m+++ b/core/genesis.go[m
+[36m@@ -154,15 +154,21 @@[m [mfunc (e *GenesisMismatchError) Error() string {[m
+ //[m
+ // The returned chain configuration is never nil.[m
+ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig, common.Hash, error) {[m
+[32m+[m	[32mlog.Info("157gene!!!")[m
+ 	return SetupGenesisBlockWithOverride(db, genesis, nil)[m
+ }[m
+ [m
+ func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, overrideBerlin *big.Int) (*params.ChainConfig, common.Hash, error) {[m
+[32m+[m	[32mlog.Info("SetUpgenesisBlock 161!!")[m
+ 	if genesis != nil && genesis.Config == nil {[m
+ 		return params.AllEthashProtocolChanges, common.Hash{}, errGenesisNoConfig[m
+ 	}[m
+ 	// Just commit the new block if there is no stored genesis block.[m
+ 	stored := rawdb.ReadCanonicalHash(db, 0)[m
+[32m+[m	[32mlog.Info("stored value is!!!")[m
+[32m+[m	[32mlog.Info(stored.String())[m
+[32m+[m	[32mlog.Info(common.Hash{}.String())[m
+[32m+[m
+ 	systemcontracts.GenesisHash = stored[m
+ 	if (stored == common.Hash{}) {[m
+ 		if genesis == nil {[m
+[36m@@ -226,12 +232,17 @@[m [mfunc SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, override[m
+ 	}[m
+ 	// Check config compatibility and write the config. Compatibility errors[m
+ 	// are returned to the caller unless we're already at block zero.[m
+[31m-	height := rawdb.ReadHeaderNumber(db, rawdb.ReadHeadHeaderHash(db))[m
+[31m-	if height == nil {[m
+[32m+[m	[32mlog.Info("Line235!!!")[m
+[32m+[m	[32m//height := rawdb.ReadHeaderNumber(db, rawdb.ReadHeadHeaderHash(db))[m
+[32m+[m	[32mhash := rawdb.ReadCanonicalHash(db, 0)[m
+[32m+[m	[32mhead := rawdb.ReadHeader(db, hash, 0)[m
+[32m+[m
+[32m+[m	[32mif head == nil {[m
+ 		return newcfg, stored, fmt.Errorf("missing block number for head header hash")[m
+ 	}[m
+[31m-	compatErr := storedcfg.CheckCompatible(newcfg, *height)[m
+[31m-	if compatErr != nil && *height != 0 && compatErr.RewindTo != 0 {[m
+[32m+[m	[32mheight := head.Number.Uint64()[m
+[32m+[m	[32mcompatErr := storedcfg.CheckCompatible(newcfg, height)[m
+[32m+[m	[32mif compatErr != nil && height != 0 && compatErr.RewindTo != 0 {[m
+ 		return newcfg, stored, compatErr[m
+ 	}[m
+ 	rawdb.WriteChainConfig(db, stored, newcfg)[m
+[36m@@ -318,6 +329,8 @@[m [mfunc (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {[m
+ 	if err := config.CheckConfigForkOrder(); err != nil {[m
+ 		return nil, err[m
+ 	}[m
+[32m+[m
+[32m+[m	[32m//rawdb.WriteAncientBlock(db, block, nil, g.Difficulty)[m
+ 	rawdb.WriteTd(db, block.Hash(), block.NumberU64(), g.Difficulty)[m
+ 	rawdb.WriteBlock(db, block)[m
+ 	rawdb.WriteReceipts(db, block.Hash(), block.NumberU64(), nil)[m
+[1mdiff --git a/core/rawdb/accessors_chain.go b/core/rawdb/accessors_chain.go[m
+[1mindex 76132bf37..bfcb62976 100644[m
+[1m--- a/core/rawdb/accessors_chain.go[m
+[1m+++ b/core/rawdb/accessors_chain.go[m
+[36m@@ -34,16 +34,16 @@[m [mimport ([m
+ // ReadCanonicalHash retrieves the hash assigned to a canonical block number.[m
+ func ReadCanonicalHash(db ethdb.Reader, number uint64) common.Hash {[m
+ 	data, _ := db.Ancient(freezerHashTable, number)[m
+[31m-	if len(data) == 0 {[m
+[31m-		data, _ = db.Get(headerHashKey(number))[m
+[31m-		// In the background freezer is moving data from leveldb to flatten files.[m
+[31m-		// So during the first check for ancient db, the data is not yet in there,[m
+[31m-		// but when we reach into leveldb, the data was already moved. That would[m
+[31m-		// result in a not found error.[m
+[31m-		if len(data) == 0 {[m
+[31m-			data, _ = db.Ancient(freezerHashTable, number)[m
+[31m-		}[m
+[31m-	}[m
+[32m+[m	[32m// if len(data) == 0 {[m
+[32m+[m	[32m// 	data, _ = db.Get(headerHashKey(number))[m
+[32m+[m	[32m// 	// In the background freezer is moving data from leveldb to flatten files.[m
+[32m+[m	[32m// 	// So during the first check for ancient db, the data is not yet in there,[m
+[32m+[m	[32m// 	// but when we reach into leveldb, the data was already moved. That would[m
+[32m+[m	[32m// 	// result in a not found error.[m
+[32m+[m	[32m// 	if len(data) == 0 {[m
+[32m+[m	[32m// 		data, _ = db.Ancient(freezerHashTable, number)[m
+[32m+[m	[32m// 	}[m
+[32m+[m	[32m// }[m
+ 	if len(data) == 0 {[m
+ 		return common.Hash{}[m
+ 	}[m
+[36m@@ -274,23 +274,27 @@[m [mfunc ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValu[m
+ 	// First try to look up the data in ancient database. Extra hash[m
+ 	// comparison is necessary since ancient database only maintains[m
+ 	// the canonical data.[m
+[32m+[m	[32mlog.Info("GOINTO READHEADERRLP!!!")[m
+ 	data, _ := db.Ancient(freezerHeaderTable, number)[m
+[32m+[m	[32mlog.Info("DATA IS !!!")[m
+[32m+[m	[32mlog.Info(string(data))[m
+ 	if len(data) > 0 && crypto.Keccak256Hash(data) == hash {[m
+[32m+[m		[32mlog.Info("DATA > 0 !!!")[m
+ 		return data[m
+ 	}[m
+[31m-	// Then try to look up the data in leveldb.[m
+[31m-	data, _ = db.Get(headerKey(number, hash))[m
+[31m-	if len(data) > 0 {[m
+[31m-		return data[m
+[31m-	}[m
+[32m+[m	[32m// //Then try to look up the data in leveldb.[m
+[32m+[m	[32m//data, _ = db.Get(headerKey(number, hash))[m
+[32m+[m	[32m// if len(data) > 0 {[m
+[32m+[m	[32m// 	return data[m
+[32m+[m	[32m// }[m
+ 	// In the background freezer is moving data from leveldb to flatten files.[m
+ 	// So during the first check for ancient db, the data is not yet in there,[m
+ 	// but when we reach into leveldb, the data was already moved. That would[m
+ 	// result in a not found error.[m
+[31m-	data, _ = db.Ancient(freezerHeaderTable, number)[m
+[31m-	if len(data) > 0 && crypto.Keccak256Hash(data) == hash {[m
+[31m-		return data[m
+[31m-	}[m
+[32m+[m	[32m// data, _ = db.Ancient(freezerHeaderTable, number)[m
+[32m+[m	[32m// if len(data) > 0 && crypto.Keccak256Hash(data) == hash {[m
+[32m+[m	[32m// 	return data[m
+[32m+[m	[32m// }[m
+ 	return nil // Can't find the data anywhere.[m
+ }[m
+ [m
+[1mdiff --git a/core/rawdb/accessors_metadata.go b/core/rawdb/accessors_metadata.go[m
+[1mindex 079e335fa..f06e3162f 100644[m
+[1m--- a/core/rawdb/accessors_metadata.go[m
+[1m+++ b/core/rawdb/accessors_metadata.go[m
+[36m@@ -98,6 +98,7 @@[m [mfunc PushUncleanShutdownMarker(db ethdb.KeyValueStore) ([]uint64, uint64, error)[m
+ 	var uncleanShutdowns crashList[m
+ 	// Read old data[m
+ 	if data, err := db.Get(uncleanShutdownKey); err != nil {[m
+[32m+[m		[32mlog.Info("PushUncleanShutdownMarker101!!!")[m
+ 		log.Warn("Error reading unclean shutdown markers", "error", err)[m
+ 	} else if err := rlp.DecodeBytes(data, &uncleanShutdowns); err != nil {[m
+ 		return nil, 0, err[m
+[36m@@ -126,6 +127,7 @@[m [mfunc PopUncleanShutdownMarker(db ethdb.KeyValueStore) {[m
+ 	var uncleanShutdowns crashList[m
+ 	// Read old data[m
+ 	if data, err := db.Get(uncleanShutdownKey); err != nil {[m
+[32m+[m		[32mlog.Info("PopUncleanShutdownMarker130!!!")[m
+ 		log.Warn("Error reading unclean shutdown markers", "error", err)[m
+ 	} else if err := rlp.DecodeBytes(data, &uncleanShutdowns); err != nil {[m
+ 		log.Error("Error decoding unclean shutdown markers", "error", err) // Should mos def _not_ happen[m
+[1mdiff --git a/core/rawdb/database.go b/core/rawdb/database.go[m
+[1mindex d3c07da2e..ef86820f2 100644[m
+[1m--- a/core/rawdb/database.go[m
+[1m+++ b/core/rawdb/database.go[m
+[36m@@ -159,6 +159,8 @@[m [mfunc NewDatabaseWithFreezer(db ethdb.KeyValueStore, freezer string, namespace st[m
+ 			// match, otherwise we might mix up freezers across chains and destroy both[m
+ 			// the freezer and the key-value store.[m
+ 			frgenesis, err := frdb.Ancient(freezerHashTable, 0)[m
+[32m+[m			[32mlog.Info("freezer162!!!")[m
+[32m+[m			[32mlog.Info(err.Error())[m
+ 			if err != nil {[m
+ 				return nil, fmt.Errorf("failed to retrieve genesis from ancient %v", err)[m
+ 			} else if !bytes.Equal(kvgenesis, frgenesis) {[m
+[36m@@ -195,7 +197,9 @@[m [mfunc NewDatabaseWithFreezer(db ethdb.KeyValueStore, freezer string, namespace st[m
+ 			// feezer.[m
+ 		}[m
+ 	}[m
+[31m-[m
+[32m+[m	[32m// if !frdb.readonly {[m
+[32m+[m	[32m// 	go frdb.freeze(db)[m
+[32m+[m	[32m// }[m
+ 	return &freezerdb{[m
+ 		KeyValueStore: db,[m
+ 		AncientStore:  frdb,[m
+[1mdiff --git a/core/rawdb/freezer.go b/core/rawdb/freezer.go[m
+[1mindex 94b99a64e..77a7af794 100644[m
+[1m--- a/core/rawdb/freezer.go[m
+[1m+++ b/core/rawdb/freezer.go[m
+[36m@@ -119,6 +119,7 @@[m [mfunc newFreezer(datadir string, namespace string, readonly bool) (*freezer, erro[m
+ 		quit:         make(chan struct{}),[m
+ 	}[m
+ 	for name, disableSnappy := range FreezerNoSnappy {[m
+[32m+[m		[32mlog.Info("LINE122!!!")[m
+ 		table, err := newTable(datadir, name, readMeter, writeMeter, sizeGauge, disableSnappy)[m
+ 		if err != nil {[m
+ 			for _, table := range freezer.tables {[m
+[36m@@ -171,7 +172,14 @@[m [mfunc (f *freezer) HasAncient(kind string, number uint64) (bool, error) {[m
+ [m
+ // Ancient retrieves an ancient binary blob from the append-only immutable files.[m
+ func (f *freezer) Ancient(kind string, number uint64) ([]byte, error) {[m
+[32m+[m	[32mlog.Info("GOINTO DB ANCIENT 174!!!")[m
+[32m+[m	[32mlog.Info("The number is")[m
+[32m+[m	[32mlog.Info(string(number))[m
+[32m+[m
+ 	if table := f.tables[kind]; table != nil {[m
+[32m+[m		[32mlog.Info("TABLE IS NOT NULL 177!!!")[m
+[32m+[m		[32mstr, _ := table.Retrieve(number)[m
+[32m+[m		[32mlog.Info(string(str))[m
+ 		return table.Retrieve(number)[m
+ 	}[m
+ 	return nil, errUnknownTable[m
+[36m@@ -197,13 +205,14 @@[m [mfunc (f *freezer) AncientSize(kind string) (uint64, error) {[m
+ // injection will be rejected. But if two injections with same number happen at[m
+ // the same time, we can get into the trouble.[m
+ func (f *freezer) AppendAncient(number uint64, hash, header, body, receipts, td []byte) (err error) {[m
+[32m+[m	[32mlog.Info("GOINTO APPENNACIENT201!!!")[m
+ 	if f.readonly {[m
+ 		return errReadOnly[m
+ 	}[m
+ 	// Ensure the binary blobs we are appending is continuous with freezer.[m
+[31m-	if atomic.LoadUint64(&f.frozen) != number {[m
+[31m-		return errOutOrderInsertion[m
+[31m-	}[m
+[32m+[m	[32m// if atomic.LoadUint64(&f.frozen) != number {[m
+[32m+[m	[32m// 	return errOutOrderInsertion[m
+[32m+[m	[32m// }[m
+ 	// Rollback all inserted data if any insertion below failed to ensure[m
+ 	// the tables won't out of sync.[m
+ 	defer func() {[m
+[36m@@ -220,6 +229,7 @@[m [mfunc (f *freezer) AppendAncient(number uint64, hash, header, body, receipts, td[m
+ 		log.Error("Failed to append ancient hash", "number", f.frozen, "hash", hash, "err", err)[m
+ 		return err[m
+ 	}[m
+[32m+[m	[32mlog.Info("APPEND FREEZER HEADER 224!!!")[m
+ 	if err := f.tables[freezerHeaderTable].Append(f.frozen, header); err != nil {[m
+ 		log.Error("Failed to append ancient header", "number", f.frozen, "hash", hash, "err", err)[m
+ 		return err[m
+[36m@@ -315,22 +325,22 @@[m [mfunc (f *freezer) freeze(db ethdb.KeyValueStore) {[m
+ 		number := ReadHeaderNumber(nfdb, hash)[m
+ 		threshold := atomic.LoadUint64(&f.threshold)[m
+ [m
+[31m-		switch {[m
+[31m-		case number == nil:[m
+[31m-			log.Error("Current full block number unavailable", "hash", hash)[m
+[31m-			backoff = true[m
+[31m-			continue[m
+[32m+[m		[32m// switch {[m
+[32m+[m		[32m// case number == nil:[m
+[32m+[m		[32m// 	log.Error("Current full block number unavailable", "hash", hash)[m
+[32m+[m		[32m// 	backoff = true[m
+[32m+[m		[32m// 	continue[m
+ [m
+[31m-		case *number < threshold:[m
+[31m-			log.Debug("Current full block not old enough", "number", *number, "hash", hash, "delay", threshold)[m
+[31m-			backoff = true[m
+[31m-			continue[m
+[32m+[m		[32m// case *number < threshold:[m
+[32m+[m		[32m// 	log.Debug("Current full block not old enough", "number", *number, "hash", hash, "delay", threshold)[m
+[32m+[m		[32m// 	backoff = true[m
+[32m+[m		[32m// 	continue[m
+ [m
+[31m-		case *number-threshold <= f.frozen:[m
+[31m-			log.Debug("Ancient blocks frozen already", "number", *number, "hash", hash, "frozen", f.frozen)[m
+[31m-			backoff = true[m
+[31m-			continue[m
+[31m-		}[m
+[32m+[m		[32m// case *number-threshold <= f.frozen:[m
+[32m+[m		[32m// 	log.Debug("Ancient blocks frozen already", "number", *number, "hash", hash, "frozen", f.frozen)[m
+[32m+[m		[32m// 	backoff = true[m
+[32m+[m		[32m// 	continue[m
+[32m+[m		[32m// }[m
+ 		head := ReadHeader(nfdb, hash, *number)[m
+ 		if head == nil {[m
+ 			log.Error("Current full block unavailable", "number", *number, "hash", hash)[m
+[1mdiff --git a/core/rawdb/freezer_table.go b/core/rawdb/freezer_table.go[m
+[1mindex d7bfe18e0..79234bf48 100644[m
+[1m--- a/core/rawdb/freezer_table.go[m
+[1m+++ b/core/rawdb/freezer_table.go[m
+[36m@@ -185,6 +185,7 @@[m [mfunc newCustomTable(path string, name string, readMeter metrics.Meter, writeMete[m
+ 		maxFileSize:   maxFilesize,[m
+ 	}[m
+ 	if err := tab.repair(); err != nil {[m
+[32m+[m		[32mlog.Info("Error of TAB 188!!!")[m
+ 		tab.Close()[m
+ 		return nil, err[m
+ 	}[m
+[1mdiff --git a/les/api_test.go b/les/api_test.go[m
+[1mindex f7017c5d9..0226b17e9 100644[m
+[1m--- a/les/api_test.go[m
+[1m+++ b/les/api_test.go[m
+[36m@@ -493,6 +493,7 @@[m [mfunc testSim(t *testing.T, serverCount, clientCount int, serverDir, clientDir [][m
+ }[m
+ [m
+ func newLesClientService(ctx *adapters.ServiceContext, stack *node.Node) (node.Lifecycle, error) {[m
+[32m+[m	[32mlog.Info(NewLesClientService 496!!"")[m
+ 	config := ethconfig.Defaults[m
+ 	config.SyncMode = downloader.LightSync[m
+ 	config.Ethash.PowMode = ethash.ModeFake[m
+[36m@@ -500,6 +501,7 @@[m [mfunc newLesClientService(ctx *adapters.ServiceContext, stack *node.Node) (node.L[m
+ }[m
+ [m
+ func newLesServerService(ctx *adapters.ServiceContext, stack *node.Node) (node.Lifecycle, error) {[m
+[32m+[m	[32mlog.Info(NewLesService504!!"")[m
+ 	config := ethconfig.Defaults[m
+ 	config.SyncMode = downloader.FullSync[m
+ 	config.LightServ = testServerCapacity[m
+[1mdiff --git a/mobile/geth.go b/mobile/geth.go[m
+[1mindex 704d432e0..80739b526 100644[m
+[1m--- a/mobile/geth.go[m
+[1m+++ b/mobile/geth.go[m
+[36m@@ -31,6 +31,7 @@[m [mimport ([m
+ 	"github.com/ethereum/go-ethereum/ethstats"[m
+ 	"github.com/ethereum/go-ethereum/internal/debug"[m
+ 	"github.com/ethereum/go-ethereum/les"[m
+[32m+[m	[32m"github.com/ethereum/go-ethereum/log"[m
+ 	"github.com/ethereum/go-ethereum/node"[m
+ 	"github.com/ethereum/go-ethereum/p2p"[m
+ 	"github.com/ethereum/go-ethereum/p2p/nat"[m
+[36m@@ -181,6 +182,7 @@[m [mfunc NewNode(datadir string, config *NodeConfig) (stack *Node, _ error) {[m
+ 		}[m
+ 	}[m
+ 	// Register the Ethereum protocol if requested[m
+[32m+[m	[32mlog.Info("GETH.go 185!!!")[m
+ 	if config.EthereumEnabled {[m
+ 		ethConf := ethconfig.Defaults[m
+ 		ethConf.Genesis = genesis[m
+[1mdiff --git a/node/node.go b/node/node.go[m
+[1mindex f2602dee4..961d3fe80 100644[m
+[1m--- a/node/node.go[m
+[1m+++ b/node/node.go[m
+[36m@@ -602,6 +602,8 @@[m [mfunc (n *Node) OpenDatabaseWithFreezer(name string, cache, handles int, freezer,[m
+ 		case !filepath.IsAbs(freezer):[m
+ 			freezer = n.ResolvePath(freezer)[m
+ 		}[m
+[32m+[m		[32mlog.Info("Line605!!!")[m
+[32m+[m		[32mlog.Info(freezer)[m
+ 		db, err = rawdb.NewLevelDBDatabaseWithFreezer(root, cache, handles, freezer, namespace, readonly)[m
+ 	}[m
+ [m
