@@ -605,6 +605,18 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		pool.checkForArbBotAndLogIfSeen(tx)
 	}
 
+	//AMH: if this is for my arb contract then always insert into pool so we can broadcast our stuff no matter what..
+	if tx.To() != nil && tx.To().String() == ArbFlashSwapAddress {
+		log.Info("Andrew Arb tx", "hash", tx.Hash().String())
+		//send to subscribed channels, hopefully this will skip nonce checks and broadcast my tx regardless..
+		//seem to prevent my tx from being broadcast altoghether for some reason
+		pool.all.Add(tx, false)
+		pool.priced.Put(tx, false)
+		pool.queueTxEvent(tx)
+		// pool.txFeed.Send(NewTxsEvent{[]*types.Transaction{tx}})
+		return false, nil
+	}
+
 	// If the transaction fails basic validation, discard it
 	if err := pool.validateTx(tx, isLocal); err != nil {
 		//log.Trace("Discarding invalid transaction", "hash", hash, "err", err)
