@@ -17,6 +17,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"math"
 	"math/big"
@@ -32,6 +33,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
@@ -252,6 +255,9 @@ type TxPool struct {
 	reorgDoneCh     chan chan struct{}
 	reorgShutdownCh chan struct{}  // requests shutdown of scheduleReorgLoop
 	wg              sync.WaitGroup // tracks loop, scheduleReorgLoop
+
+	//AMH: cache for tx delivery data
+	mongoClient *mongo.Client //amh: used for bot tracking
 }
 
 type txpoolResetRequest struct {
@@ -282,6 +288,12 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		reorgShutdownCh: make(chan struct{}),
 		gasPrice:        new(big.Int).SetUint64(config.PriceLimit),
 	}
+
+	//amh: create client for mongo to track bot txs
+	if enableTxDeliveryLogging {
+		pool.mongoClient, _ = mongo.Connect(context.Background(), options.Client().ApplyURI(MongoUri))
+	}
+
 	pool.locals = newAccountSet(pool.signer)
 	for _, addr := range config.Locals {
 		log.Info("Setting new local account", "address", addr)
@@ -587,6 +599,11 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	// Make the local flag. If it's from local source or it's from the network but
 	// the sender is marked as local previously, treat it as the local transaction.
 	isLocal := local || pool.locals.containsTx(tx)
+
+	//AMH: if the tx method is the arb bot we want to track then log it to mongo
+	if enableTxDeliveryLogging {
+		pool.checkForArbBotAndLogIfSeen(tx)
+	}
 
 	// If the transaction fails basic validation, discard it
 	if err := pool.validateTx(tx, isLocal); err != nil {

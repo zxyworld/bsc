@@ -276,6 +276,12 @@ func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) 
 		underpriced int64
 		otherreject int64
 	)
+
+	//AMH: tag each tx with peer id
+	for _, tx := range txs {
+		tx.PeerID = peer
+	}
+
 	errs := f.addTxs(txs)
 	for i, err := range errs {
 		if err != nil {

@@ -49,6 +49,9 @@ type Transaction struct {
 	inner TxData    // Consensus contents of a transaction
 	time  time.Time // Time first seen locally (spam avoidance)
 
+	//AMH: adding peer tracking
+	PeerID string
+
 	// caches
 	hash atomic.Value
 	size atomic.Value
@@ -268,6 +271,9 @@ func (tx *Transaction) Value() *big.Int { return new(big.Int).Set(tx.inner.value
 
 // Nonce returns the sender account nonce of the transaction.
 func (tx *Transaction) Nonce() uint64 { return tx.inner.nonce() }
+
+//AMH: adding method to return time of the tx first seen
+func (tx *Transaction) Time() time.Time { return tx.time }
 
 // To returns the recipient address of the transaction.
 // For contract-creation transactions, To returns nil.
