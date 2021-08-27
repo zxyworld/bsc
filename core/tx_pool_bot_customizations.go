@@ -70,7 +70,8 @@ func (pool *TxPool) checkForArbBotAndLogIfSeen(tx *types.Transaction) {
 	}
 	method := data[0:8]
 
-	if method == "1de9c881" ||
+	if method == "c4d44074" ||
+		method == "1de9c881" ||
 		method == "1171c9aa" ||
 		method == "985ea703" ||
 		method == "a53a688b" ||
