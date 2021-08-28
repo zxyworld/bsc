@@ -31,7 +31,8 @@ var (
 	}
 
 	//controls if bot txs are captured and logged to mongo for review
-	enableTxDeliveryLogging = false
+	enableTxDeliveryLoggingForBots  = false
+	enableTxDeliveryLoggingForMyArb = true
 
 	MongoUri                        = "mongodb://localhost:27017"
 	DbName                          = "txdelivery"
@@ -70,8 +71,8 @@ func (pool *TxPool) checkForArbBotAndLogIfSeen(tx *types.Transaction) {
 	}
 	method := data[0:8]
 
-	if method == "c4d44074" ||
-		method == "1de9c881" ||
+	logMyTx := enableTxDeliveryLoggingForMyArb && method == "c4d44074"
+	logBotTx := enableTxDeliveryLoggingForBots && (method == "1de9c881" ||
 		method == "1171c9aa" ||
 		method == "985ea703" ||
 		method == "a53a688b" ||
@@ -79,7 +80,9 @@ func (pool *TxPool) checkForArbBotAndLogIfSeen(tx *types.Transaction) {
 		method == "ecfa311d" ||
 		method == "b92a8126" ||
 		method == "0548f398" ||
-		method == "36946015" {
+		method == "36946015")
+
+	if logMyTx || logBotTx {
 		//log with peer info to mongo
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()

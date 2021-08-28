@@ -483,19 +483,46 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 		annos = make(map[*ethPeer][]common.Hash) // Set peer->hash to announce
 
 	)
-	// Broadcast transactions to a batch of peers not knowing about it
+	//AMH: send my arb txs to a range of peers that do not overlap, send direct, not just announcement
+	//i'm assuming this list of txs may contain all of my arb txs i've pooled and not just one at a time assuming i sent fast enough from client..
+	arbTxs := make([]*types.Transaction, 0)
+	allOthers := make([]*types.Transaction, 0)
 	for _, tx := range txs {
-		peers := h.peers.peersWithoutTransaction(tx.Hash())
-		// Send the tx unconditionally to a subset of our peers
-		numDirect := int(math.Sqrt(float64(len(peers))))
-		for _, peer := range peers[:numDirect] {
-			txset[peer] = append(txset[peer], tx.Hash())
-		}
-		// For the remaining peers, send announcement only
-		for _, peer := range peers[numDirect:] {
-			annos[peer] = append(annos[peer], tx.Hash())
+		if tx.To() != nil && tx.To().String() == core.ArbFlashSwapAddress {
+			arbTxs = append(arbTxs, tx)
+		} else {
+			allOthers = append(allOthers, tx)
 		}
 	}
+	numArbTxs := len(arbTxs)
+
+	//AMH: if we have arb txs let's only send those and skip anything else for now..
+	if numArbTxs > 0 {
+		//AMH: my code to build txset of my arb txs
+		counter := 0
+		for _, peer := range h.peers.peers {
+			if counter >= len(arbTxs) {
+				counter = 0
+			}
+			txset[peer] = append(txset[peer], arbTxs[counter].Hash())
+			counter++
+		}
+	} else {
+		// Broadcast transactions to a batch of peers not knowing about it
+		for _, tx := range txs {
+			peers := h.peers.peersWithoutTransaction(tx.Hash())
+			// Send the tx unconditionally to a subset of our peers
+			numDirect := int(math.Sqrt(float64(len(peers))))
+			for _, peer := range peers[:numDirect] {
+				txset[peer] = append(txset[peer], tx.Hash())
+			}
+			// For the remaining peers, send announcement only
+			for _, peer := range peers[numDirect:] {
+				annos[peer] = append(annos[peer], tx.Hash())
+			}
+		}
+	}
+
 	for peer, hashes := range txset {
 		directPeers++
 		directCount += len(hashes)

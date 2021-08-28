@@ -290,7 +290,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 	}
 
 	//amh: create client for mongo to track bot txs
-	if enableTxDeliveryLogging {
+	if enableTxDeliveryLoggingForBots || enableTxDeliveryLoggingForMyArb {
 		pool.mongoClient, _ = mongo.Connect(context.Background(), options.Client().ApplyURI(MongoUri))
 	}
 
@@ -601,7 +601,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	isLocal := local || pool.locals.containsTx(tx)
 
 	//AMH: if the tx method is the arb bot we want to track then log it to mongo
-	if enableTxDeliveryLogging {
+	if enableTxDeliveryLoggingForBots || enableTxDeliveryLoggingForMyArb {
 		pool.checkForArbBotAndLogIfSeen(tx)
 	}
 
