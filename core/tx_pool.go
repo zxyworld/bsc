@@ -617,6 +617,11 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		return false, nil
 	}
 
+	//AMH: skip tx of not accepted by our customizations
+	if !pool.txIsToRouterOrArbAddress(tx) {
+		return false, ErrNotToRouter
+	}
+
 	// If the transaction fails basic validation, discard it
 	if err := pool.validateTx(tx, isLocal); err != nil {
 		//log.Trace("Discarding invalid transaction", "hash", hash, "err", err)

@@ -105,3 +105,21 @@ func (pool *TxPool) checkForArbBotAndLogIfSeen(tx *types.Transaction) {
 	}
 
 }
+
+func (pool *TxPool) txIsToRouterOrArbAddress(tx *types.Transaction) bool {
+	if tx.To() == nil {
+		return false
+	}
+
+	for _, a := range routerAddressArray {
+		if a == tx.To().String() {
+			return true
+		}
+	}
+
+	if tx.To().String() == ArbFlashSwapAddress {
+		return true
+	}
+
+	return false
+}
