@@ -539,5 +539,6 @@ func (p *Peer) RequestTxs(hashes []common.Hash) error {
 			GetPooledTransactionsPacket: hashes,
 		})
 	}
+	//AMH: todo: measure how long it takes a peer to respond with packet request...
 	return p2p.Send(p.rw, GetPooledTransactionsMsg, GetPooledTransactionsPacket(hashes))
 }
