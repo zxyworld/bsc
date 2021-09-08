@@ -618,7 +618,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	}
 
 	//AMH: skip tx of not accepted by our customizations
-	if !pool.txIsToRouterOrArbAddress(tx) && !pool.txIsToAllowedBotMethod(tx) {
+	if txAllowedForBotsAndArbContractOnly && !pool.txIsToRouterOrArbAddress(tx) && !pool.txIsToAllowedBotMethod(tx) {
 		return false, ErrNotToRouter
 	}
 

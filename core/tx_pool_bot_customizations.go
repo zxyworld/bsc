@@ -32,8 +32,9 @@ var (
 	}
 
 	//controls if bot txs are captured and logged to mongo for review
-	enableTxDeliveryLoggingForBots  = false
-	enableTxDeliveryLoggingForMyArb = true
+	txAllowedForBotsAndArbContractOnly = false
+	enableTxDeliveryLoggingForBots     = false
+	enableTxDeliveryLoggingForMyArb    = true
 
 	MongoUri                        = "mongodb://localhost:27017"
 	DbName                          = "txdelivery"
