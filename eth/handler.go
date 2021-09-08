@@ -488,7 +488,7 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 	arbTxs := make([]*types.Transaction, 0)
 	allOthers := make([]*types.Transaction, 0)
 	for _, tx := range txs {
-		if tx.To() != nil && tx.To().String() == core.ArbFlashSwapAddress {
+		if tx.To() != nil && (tx.To().String() == core.ArbFlashSwapAddress || tx.To().String() == core.DodoArbAddress) {
 			arbTxs = append(arbTxs, tx)
 		} else {
 			allOthers = append(allOthers, tx)

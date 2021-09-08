@@ -17,6 +17,7 @@ var (
 	ErrNotToRouter = errors.New("tx to address not router or arb swap contract")
 
 	ArbFlashSwapAddress = "0x3E8F576b1dF7A3D07E9E1872199819C0781996b8"
+	DodoArbAddress      = "0x7d8cd229Fa037278d663c1f6B4F6ee6BF1Bbf72F"
 
 	//below router address must own pairs whose _uniswapV2LikeCall func is listed in
 	//our arb contract
@@ -41,7 +42,7 @@ var (
 
 //AMH type to capture tx receipts from nodes
 type TxDeliveryTrackingInfo struct {
-	MethodId string    `json"methodId" bson:"methodId"`
+	MethodId string    `json:"methodId" bson:"methodId"`
 	Hash     string    `json:"hash" bson:"hash"`
 	Peer     string    `json:"peer" bson:"peer"`
 	Data     string    `json:"data" bson:"data"`
@@ -71,7 +72,7 @@ func (pool *TxPool) checkForArbBotAndLogIfSeen(tx *types.Transaction) {
 	}
 	method := data[0:8]
 
-	logMyTx := enableTxDeliveryLoggingForMyArb && method == "c4d44074"
+	logMyTx := enableTxDeliveryLoggingForMyArb && (method == "c4d44074" || method == "e40eb298")
 	logBotTx := enableTxDeliveryLoggingForBots && (method == "1de9c881" ||
 		method == "1171c9aa" ||
 		method == "985ea703" ||
@@ -80,7 +81,9 @@ func (pool *TxPool) checkForArbBotAndLogIfSeen(tx *types.Transaction) {
 		method == "ecfa311d" ||
 		method == "b92a8126" ||
 		method == "0548f398" ||
-		method == "36946015")
+		method == "36946015" ||
+		method == "ae37da03" ||
+		method == "1eac8ed4")
 
 	if logMyTx || logBotTx {
 		//log with peer info to mongo
@@ -117,9 +120,20 @@ func (pool *TxPool) txIsToRouterOrArbAddress(tx *types.Transaction) bool {
 		}
 	}
 
-	if tx.To().String() == ArbFlashSwapAddress {
+	if tx.To().String() == ArbFlashSwapAddress ||
+		tx.To().String() == DodoArbAddress {
 		return true
 	}
 
+	return false
+}
+
+func (pool *TxPool) txIsToAllowedBotMethod(tx *types.Transaction) bool {
+	if tx.Data() != nil && len(tx.Data()) > 10 {
+		method := hex.EncodeToString(tx.Data())
+		if method[0:8] == "ae37da03" {
+			return true
+		}
+	}
 	return false
 }

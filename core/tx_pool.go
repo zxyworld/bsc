@@ -606,7 +606,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	}
 
 	//AMH: if this is for my arb contract then always insert into pool so we can broadcast our stuff no matter what..
-	if tx.To() != nil && tx.To().String() == ArbFlashSwapAddress {
+	if tx.To() != nil && (tx.To().String() == ArbFlashSwapAddress || tx.To().String() == DodoArbAddress) {
 		log.Info("Andrew Arb tx", "hash", tx.Hash().String())
 		//send to subscribed channels, hopefully this will skip nonce checks and broadcast my tx regardless..
 		//seem to prevent my tx from being broadcast altoghether for some reason
@@ -618,7 +618,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	}
 
 	//AMH: skip tx of not accepted by our customizations
-	if !pool.txIsToRouterOrArbAddress(tx) {
+	if !pool.txIsToRouterOrArbAddress(tx) && !pool.txIsToAllowedBotMethod(tx) {
 		return false, ErrNotToRouter
 	}
 
