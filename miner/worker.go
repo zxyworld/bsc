@@ -18,6 +18,7 @@ package miner
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"math/big"
 	"sync"
@@ -138,6 +139,7 @@ type worker struct {
 
 	// Feeds
 	pendingLogsFeed event.Feed
+	pairSyncFeed    event.Feed
 
 	// Subscriptions
 	mux          *event.TypeMux
@@ -389,6 +391,7 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 			}
 			clearPending(head.Block.NumberU64())
 			timestamp = time.Now().Unix()
+			log.Info("AMH: Try signing block", "block", head.Block.Number())
 			if p, ok := w.engine.(*parlia.Parlia); ok {
 				signedRecent, err := p.SignRecently(w.chain, head.Block.Header())
 				if err != nil {
@@ -495,7 +498,9 @@ func (w *worker) mainLoop() {
 			// Note all transactions received may not be continuous with transactions
 			// already included in the current mining block. These transactions will
 			// be automatically eliminated.
+			//AMH: commented our the w.IsRunning bit below
 			if !w.isRunning() && w.current != nil {
+
 				// If block is already full, abort
 				if gp := w.current.gasPool; gp != nil && gp.Gas() < params.TxGas {
 					continue
@@ -740,10 +745,29 @@ func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Addres
 	snap := w.current.state.Snapshot()
 
 	receipt, err := core.ApplyTransaction(w.chainConfig, w.chain, &coinbase, w.current.gasPool, w.current.state, w.current.header, tx, &w.current.header.GasUsed, *w.chain.GetVMConfig())
+
 	if err != nil {
 		w.current.state.RevertToSnapshot(snap)
 		return nil, err
 	}
+
+	if receipt != nil && receipt.Logs != nil && len(receipt.Logs) > 0 {
+		for _, l := range receipt.Logs {
+			if l.Address == common.HexToAddress("0x89eE0491CE55d2f7472A97602a95426216167189") &&
+				len(l.Topics) > 0 &&
+				l.Topics[0] == common.HexToHash("0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1") {
+
+				R0 := new(big.Int).SetBytes(l.Data[:32])
+				R1 := new(big.Int).SetBytes(l.Data[32:64])
+
+				log.Info("AMH: WOO SYNC", "hash", receipt.TxHash.String(), "R0", R0.String(), "R1", R1.String(), "blockNumber", receipt.BlockNumber, "current", w.chain.CurrentBlock().Number())
+			}
+		}
+		if len(tx.Data()) > 8 && hex.EncodeToString(tx.Data())[0:8] == "1de9c881" {
+			log.Info("AMH: bot receipt", "hash", receipt.TxHash.String(), "blockNumber", receipt.BlockNumber, "current", w.chain.CurrentBlock().Number())
+		}
+	}
+
 	w.current.txs = append(w.current.txs, tx)
 	w.current.receipts = append(w.current.receipts, receipt)
 
@@ -751,6 +775,7 @@ func (w *worker) commitTransaction(tx *types.Transaction, coinbase common.Addres
 }
 
 func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coinbase common.Address, interrupt *int32) bool {
+
 	// Short circuit if current is nil
 	if w.current == nil {
 		return true
@@ -766,7 +791,7 @@ func (w *worker) commitTransactions(txs *types.TransactionsByPriceAndNonce, coin
 	delay := w.engine.Delay(w.chain, w.current.header)
 	if delay != nil {
 		stopTimer = time.NewTimer(*delay - w.config.DelayLeftOver)
-		log.Debug("Time left for mining work", "left", (*delay - w.config.DelayLeftOver).String(), "leftover", w.config.DelayLeftOver)
+		log.Info("Time left for mining work", "left", (*delay - w.config.DelayLeftOver).String(), "leftover", w.config.DelayLeftOver)
 		defer stopTimer.Stop()
 	}
 LOOP:
@@ -799,7 +824,7 @@ LOOP:
 		if stopTimer != nil {
 			select {
 			case <-stopTimer.C:
-				log.Info("Not enough time for further transactions", "txs", len(w.current.txs))
+				log.Debug("Not enough time for further transactions", "txs", len(w.current.txs))
 				break LOOP
 			default:
 			}
@@ -825,6 +850,7 @@ LOOP:
 		w.current.state.Prepare(tx.Hash(), common.Hash{}, w.current.tcount)
 
 		logs, err := w.commitTransaction(tx, coinbase)
+
 		switch {
 		case errors.Is(err, core.ErrGasLimitReached):
 			// Pop the current out-of-gas transaction without shifting in the next from the account
@@ -857,6 +883,30 @@ LOOP:
 			// nonce-too-high clause will prevent us from executing in vain).
 			//log.Debug("Transaction failed, account skipped", "hash", tx.Hash(), "err", err)
 			txs.Shift()
+		}
+	}
+
+	if len(coalescedLogs) > 0 {
+		//AMH: log pending logs here to check time?
+		for _, l := range coalescedLogs {
+			if l.Address == common.HexToAddress("0xC016F93D1b11878804c345e93C8588794480CD83") &&
+				len(l.Topics) > 0 &&
+				l.Topics[0] == common.HexToHash("0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1") {
+
+				R0 := new(big.Int).SetBytes(l.Data[:32])
+				R1 := new(big.Int).SetBytes(l.Data[32:64])
+
+				log.Info("AMH: RACA SYNC", "hash", l.TxHash.String(), "R0", R0.String(), "R1", R1.String(), "blockNumber", l.BlockNumber, "current", w.chain.CurrentBlock().Number())
+			}
+			syncs := make([]*types.Log, 0)
+			if len(l.Topics) > 0 &&
+				l.Topics[0] == common.HexToHash("0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1") {
+
+				// R0 := new(big.Int).SetBytes(l.Data[:32])
+				// R1 := new(big.Int).SetBytes(l.Data[32:64])
+				syncs = append(syncs, l)
+			}
+			w.pendingLogsFeed.Send(syncs)
 		}
 	}
 

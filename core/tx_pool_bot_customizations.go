@@ -17,7 +17,7 @@ var (
 	ErrNotToRouter = errors.New("tx to address not router or arb swap contract")
 
 	ArbFlashSwapAddress = "0x3E8F576b1dF7A3D07E9E1872199819C0781996b8"
-	DodoArbAddress      = "0x7d8cd229Fa037278d663c1f6B4F6ee6BF1Bbf72F"
+	DodoArbAddress      = "0x57B3a58B6b5a9090B158E2Cf724Dfa0d64647ABA"
 
 	//below router address must own pairs whose _uniswapV2LikeCall func is listed in
 	//our arb contract

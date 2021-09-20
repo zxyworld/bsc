@@ -20,7 +20,6 @@ package filters
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -202,39 +201,43 @@ func (es *EventSystem) subscribe(sub *subscription) *Subscription {
 // given criteria to the given logs channel. Default value for the from and to
 // block is "latest". If the fromBlock > toBlock an error is returned.
 func (es *EventSystem) SubscribeLogs(crit ethereum.FilterQuery, logs chan []*types.Log) (*Subscription, error) {
-	var from, to rpc.BlockNumber
-	if crit.FromBlock == nil {
-		from = rpc.LatestBlockNumber
-	} else {
-		from = rpc.BlockNumber(crit.FromBlock.Int64())
-	}
-	if crit.ToBlock == nil {
-		to = rpc.LatestBlockNumber
-	} else {
-		to = rpc.BlockNumber(crit.ToBlock.Int64())
-	}
+	// var from, to rpc.BlockNumber
+	// if crit.FromBlock == nil {
+	// 	from = rpc.LatestBlockNumber
+	// } else {
+	// 	from = rpc.BlockNumber(crit.FromBlock.Int64())
+	// }
+	// if crit.ToBlock == nil {
+	// 	to = rpc.LatestBlockNumber
+	// } else {
+	// 	to = rpc.BlockNumber(crit.ToBlock.Int64())
+	// }
 
-	// only interested in pending logs
-	if from == rpc.PendingBlockNumber && to == rpc.PendingBlockNumber {
-		return es.subscribePendingLogs(crit, logs), nil
-	}
-	// only interested in new mined logs
-	if from == rpc.LatestBlockNumber && to == rpc.LatestBlockNumber {
-		return es.subscribeLogs(crit, logs), nil
-	}
-	// only interested in mined logs within a specific block range
-	if from >= 0 && to >= 0 && to >= from {
-		return es.subscribeLogs(crit, logs), nil
-	}
-	// interested in mined logs from a specific block number, new logs and pending logs
-	if from >= rpc.LatestBlockNumber && to == rpc.PendingBlockNumber {
-		return es.subscribeMinedPendingLogs(crit, logs), nil
-	}
-	// interested in logs from a specific block number to new mined blocks
-	if from >= 0 && to == rpc.LatestBlockNumber {
-		return es.subscribeLogs(crit, logs), nil
-	}
-	return nil, fmt.Errorf("invalid from and to block combination: from > to")
+	log.Info("AMH: Subscribed to pending logs...")
+	return es.subscribePendingLogs(crit, logs), nil
+
+	// // only interested in pending logs
+	// if from == rpc.PendingBlockNumber && to == rpc.PendingBlockNumber {
+	// 	log.Info("AMH: Subscribed to pending logs...")
+	// 	return es.subscribePendingLogs(crit, logs), nil
+	// }
+	// // only interested in new mined logs
+	// if from == rpc.LatestBlockNumber && to == rpc.LatestBlockNumber {
+	// 	return es.subscribeLogs(crit, logs), nil
+	// }
+	// // only interested in mined logs within a specific block range
+	// if from >= 0 && to >= 0 && to >= from {
+	// 	return es.subscribeLogs(crit, logs), nil
+	// }
+	// // interested in mined logs from a specific block number, new logs and pending logs
+	// if from >= rpc.LatestBlockNumber && to == rpc.PendingBlockNumber {
+	// 	return es.subscribeMinedPendingLogs(crit, logs), nil
+	// }
+	// // interested in logs from a specific block number to new mined blocks
+	// if from >= 0 && to == rpc.LatestBlockNumber {
+	// 	return es.subscribeLogs(crit, logs), nil
+	// }
+	// return nil, fmt.Errorf("invalid from and to block combination: from > to")
 }
 
 // subscribeMinedPendingLogs creates a subscription that returned mined and
