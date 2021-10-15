@@ -51,3 +51,4 @@ profile.cov
 
 nohup.out
 nohup_offline.out
+*.out
