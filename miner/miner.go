@@ -244,3 +244,7 @@ func (miner *Miner) DisablePreseal() {
 func (miner *Miner) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription {
 	return miner.worker.pendingLogsFeed.Subscribe(ch)
 }
+
+func (miner *Miner) SubscribePairSyncLogs(ch chan<- []*types.Log) event.Subscription {
+	return miner.worker.pairSyncFeed.Subscribe(ch)
+}

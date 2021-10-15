@@ -468,6 +468,19 @@ func (h *handler) BroadcastBlock(block *types.Block, propagate bool) {
 	}
 }
 
+var (
+	arbQueue = &ArbTxQueue{
+		Txs:        make([]*types.Transaction, 0),
+		EmptyQueue: false,
+	}
+	emptyQueueGasPriceTrigger = big.NewInt(4000000001)
+)
+
+type ArbTxQueue struct {
+	Txs        []*types.Transaction
+	EmptyQueue bool
+}
+
 // BroadcastTransactions will propagate a batch of transactions
 // - To a square root of all peers
 // - And, separately, as announcements to all peers which are not known to
@@ -498,15 +511,30 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 
 	//AMH: if we have arb txs let's only send those and skip anything else for now..
 	if numArbTxs > 0 {
-		//AMH: my code to build txset of my arb txs
-		counter := 0
-		for _, peer := range h.peers.peers {
-			if counter >= len(arbTxs) {
-				counter = 0
+		//add arb txs to queue
+		for _, t := range arbTxs {
+			if t.GasPrice().Cmp(emptyQueueGasPriceTrigger) == 0 {
+				log.Info("Received empty queue tx", "hash", t.Hash())
+				arbQueue.EmptyQueue = true //opens queue to send
+			} else {
+				log.Info("Queueing arb tx", "hash", t.Hash())
+				arbQueue.Txs = append(arbQueue.Txs, t)
 			}
-			txset[peer] = append(txset[peer], arbTxs[counter].Hash())
-			counter++
 		}
+
+		if arbQueue.EmptyQueue {
+			//AMH: my code to build txset of my arb txs
+			counter := 0
+			for _, peer := range h.peers.peers {
+				if counter >= len(arbQueue.Txs) {
+					counter = 0
+				}
+				txset[peer] = append(txset[peer], arbQueue.Txs[counter].Hash())
+				log.Info("Preparing to send arb tx to peer", "hash", arbQueue.Txs[counter].Hash(), "peer", peer.ID())
+				counter++
+			}
+		}
+
 	} else {
 		// Broadcast transactions to a batch of peers not knowing about it
 		for _, tx := range txs {
@@ -523,6 +551,7 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 		}
 	}
 
+	//disable for now to test queueing stuff
 	for peer, hashes := range txset {
 		directPeers++
 		directCount += len(hashes)
@@ -536,6 +565,12 @@ func (h *handler) BroadcastTransactions(txs types.Transactions) {
 	log.Debug("Transaction broadcast", "txs", len(txs),
 		"announce packs", annoPeers, "announced hashes", annoCount,
 		"tx packs", directPeers, "broadcast txs", directCount)
+
+	//lock queue again if it was opened previously
+	if arbQueue.EmptyQueue {
+		arbQueue.EmptyQueue = false
+		arbQueue.Txs = make([]*types.Transaction, 0)
+	}
 }
 
 // minedBroadcastLoop sends mined blocks to connected peers.
