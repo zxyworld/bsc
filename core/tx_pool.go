@@ -628,6 +628,25 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		invalidTxMeter.Mark(1)
 		return false, err
 	}
+
+	//capture the time entering pool so we can filter later..
+	tx.PoolEntryTime = time.Now()
+
+	//AMH: check if tx has any data that looks like it matches our fileters
+	//we'll make this more robust later and add RPC method to update/reset filter as needed
+	// pass := false
+	// if len(tx.Data()) > 40 {
+	// 	sdata := hex.EncodeToString(tx.Data())
+	// 	if strings.Contains(sdata, "58f876857a02d6762e0101bb5c46a8c1ed44dc16") ||
+	// 		strings.Contains(sdata, "e9e7cea3dedca5984780bafc599bd69add087d56") ||
+	// 		strings.Contains(sdata, "bb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c") {
+	// 		pass = true
+	// 	}
+	// }
+	// if !pass {
+	// 	return false, errors.New("tx not matching filter for tokens/pairs/etc")
+	// }
+
 	// If the transaction pool is full, discard underpriced transactions
 	if uint64(pool.all.Count()+numSlots(tx)) > pool.config.GlobalSlots+pool.config.GlobalQueue {
 		// If the new transaction is underpriced, don't accept it

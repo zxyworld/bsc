@@ -832,6 +832,10 @@ type OverrideAccount struct {
 // StateOverride is the collection of overridden accounts.
 type StateOverride map[common.Address]OverrideAccount
 
+// type CallTraceTxMap map[common.Hash]CallArgs
+
+type CallTraceSequence []CallArgs
+
 // Apply overrides the fields of specified accounts into the given state.
 func (diff *StateOverride) Apply(state *state.StateDB) error {
 	if diff == nil {

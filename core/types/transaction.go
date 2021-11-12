@@ -50,8 +50,9 @@ type Transaction struct {
 	time  time.Time // Time first seen locally (spam avoidance)
 
 	//AMH: adding peer tracking
-	PeerID       string
-	AnnounceTIme time.Time
+	PeerID string
+
+	PoolEntryTime time.Time
 
 	// caches
 	hash atomic.Value

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -137,4 +138,58 @@ func (pool *TxPool) txIsToAllowedBotMethod(tx *types.Transaction) bool {
 		}
 	}
 	return false
+}
+
+func (pool *TxPool) PendingEnteredAfter(entryTimeMin time.Time) (map[common.Address]types.Transactions, error) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	pending := make(map[common.Address]types.Transactions)
+	for addr, list := range pool.pending {
+		fl := list.Flatten()
+		for _, f := range fl {
+			if f.PoolEntryTime.After(entryTimeMin) {
+				if _, exists := pending[addr]; !exists {
+					pending[addr] = make(types.Transactions, 0)
+				}
+				pending[addr] = append(pending[addr], f)
+			}
+		}
+	}
+	return pending, nil
+}
+
+func (pool *TxPool) PendingEnteredBeforeMap(entryTimeCutoff time.Time) (map[common.Address]types.Transactions, error) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	pending := make(map[common.Address]types.Transactions)
+	for addr, list := range pool.pending {
+		fl := list.Flatten()
+		for _, f := range fl {
+			if f.PoolEntryTime.Before(entryTimeCutoff) {
+				if _, exists := pending[addr]; !exists {
+					pending[addr] = make(types.Transactions, 0)
+				}
+				pending[addr] = append(pending[addr], f)
+			}
+		}
+	}
+	return pending, nil
+}
+
+func (pool *TxPool) PendingEnteredBeforeArray(entryTimeCutoff time.Time) ([]*types.Transaction, error) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	pending := make([]*types.Transaction, 0)
+	for _, list := range pool.pending {
+		fl := list.Flatten()
+		for _, f := range fl {
+			if f.PoolEntryTime.Before(entryTimeCutoff) {
+				pending = append(pending, f)
+			}
+		}
+	}
+	return pending, nil
 }

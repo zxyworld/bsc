@@ -190,6 +190,7 @@ func (s *StateDB) StopPrefetcher() {
 func (s *StateDB) setError(err error) {
 	if s.dbErr == nil {
 		s.dbErr = err
+
 	}
 }
 
@@ -197,14 +198,14 @@ func (s *StateDB) Error() error {
 	return s.dbErr
 }
 
-func (s *StateDB) AddLog(log *types.Log) {
+func (s *StateDB) AddLog(lg *types.Log) {
 	s.journal.append(addLogChange{txhash: s.thash})
 
-	log.TxHash = s.thash
-	log.BlockHash = s.bhash
-	log.TxIndex = uint(s.txIndex)
-	log.Index = s.logSize
-	s.logs[s.thash] = append(s.logs[s.thash], log)
+	lg.TxHash = s.thash
+	lg.BlockHash = s.bhash
+	lg.TxIndex = uint(s.txIndex)
+	lg.Index = s.logSize
+	s.logs[s.thash] = append(s.logs[s.thash], lg)
 	s.logSize++
 }
 

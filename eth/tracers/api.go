@@ -171,6 +171,10 @@ type TraceCallConfig struct {
 	Timeout        *string
 	Reexec         *uint64
 	StateOverrides *ethapi.StateOverride
+	// CallTraceTxMap    *ethapi.CallTraceTxMap
+	CallTraceSequence []*ethapi.CallArgs
+	CallTraceHashes   []common.Hash
+	UseJSTracer       bool
 }
 
 // StdTraceConfig holds extra parameters to standard-json trace functions.
@@ -748,12 +752,69 @@ func (api *API) TraceTransaction(ctx context.Context, hash common.Hash, config *
 	return api.traceTx(ctx, msg, txctx, vmctx, statedb, config)
 }
 
+// ///AMH: attempt to support tracing multiple calls sequentially
+// func (api *API) TraceCall_BACKUP(ctx context.Context, args CallArgsArray, blockNrOrHash rpc.BlockNumberOrHash, config *TraceCallConfig) (interface{}, error) {
+// 	// Try to retrieve the specified block
+// 	var (
+// 		err   error
+// 		block *types.Block
+// 	)
+// 	if hash, ok := blockNrOrHash.Hash(); ok {
+// 		block, err = api.blockByHash(ctx, hash)
+// 	} else if number, ok := blockNrOrHash.Number(); ok {
+// 		block, err = api.blockByNumber(ctx, number)
+// 	} else {
+// 		return nil, errors.New("invalid arguments; neither block nor hash specified")
+// 	}
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	// try to recompute the state
+// 	reexec := defaultTraceReexec
+// 	if config != nil && config.Reexec != nil {
+// 		reexec = *config.Reexec
+// 	}
+// 	statedb, err := api.backend.StateAtBlock(ctx, block, reexec, nil, true)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	// Apply the customized state rules if required.
+// 	if config != nil {
+// 		if err := config.StateOverrides.Apply(statedb); err != nil {
+// 			return nil, err
+// 		}
+// 	}
+// 	// Execute the trace
+// 	msg := args.Calls[0].ToMessage(api.backend.RPCGasCap())
+// 	vmctx := core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
+
+// 	var traceConfig *TraceConfig
+// 	if config != nil {
+// 		traceConfig = &TraceConfig{
+// 			LogConfig: config.LogConfig,
+// 			Tracer:    config.Tracer,
+// 			Timeout:   config.Timeout,
+// 			Reexec:    config.Reexec,
+// 		}
+// 	}
+// 	return api.traceTx(ctx, msg, new(txTraceContext), vmctx, statedb, traceConfig)
+// }
+
+type MultiTraceResult struct {
+	TraceDuration time.Duration
+	TracesResults map[common.Hash]interface{}
+	TxLogs        map[common.Hash][]*types.Log
+}
+
 // TraceCall lets you trace a given eth_call. It collects the structured logs
 // created during the execution of EVM if the given transaction was added on
 // top of the provided block and returns them as a JSON object.
 // You can provide -2 as a block number to trace on top of the pending block.
 func (api *API) TraceCall(ctx context.Context, args ethapi.CallArgs, blockNrOrHash rpc.BlockNumberOrHash, config *TraceCallConfig) (interface{}, error) {
 	// Try to retrieve the specified block
+
+	traceStartTs := time.Now()
+
 	var (
 		err   error
 		block *types.Block
@@ -784,10 +845,13 @@ func (api *API) TraceCall(ctx context.Context, args ethapi.CallArgs, blockNrOrHa
 		}
 	}
 	// Execute the trace
-	msg := args.ToMessage(api.backend.RPCGasCap())
-	vmctx := core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
+	multiResult := &MultiTraceResult{
+		TxLogs: make(map[common.Hash][]*types.Log),
+	}
+	var traceError error
 
 	var traceConfig *TraceConfig
+
 	if config != nil {
 		traceConfig = &TraceConfig{
 			LogConfig: config.LogConfig,
@@ -796,7 +860,83 @@ func (api *API) TraceCall(ctx context.Context, args ethapi.CallArgs, blockNrOrHa
 			Reexec:    config.Reexec,
 		}
 	}
-	return api.traceTx(ctx, msg, new(txTraceContext), vmctx, statedb, traceConfig)
+
+	//ensure we don't use the JS tracer
+	if !config.UseJSTracer {
+		traceConfig.Tracer = nil
+	}
+
+	vmctx := core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
+
+	//NOTE: this map result is NOT in the order of the tx hashes as processed
+	//will need to re-order these by tx sequence somehow either here or on client
+	logResultMap := make(map[common.Hash][]*types.Log)
+	traceResultMap := make(map[common.Hash]interface{})
+
+	//AMH: customizing here to support ability to trace a sequence of transactions and output the results mapped by tx hash
+	//this will use the same statedb so that each tx can build on the state changes of the prior tx trace
+	for hi := range config.CallTraceSequence {
+		// log.Info("Starting debug_traceCall for TX", "hash", hash, "data", c)
+
+		hash := config.CallTraceHashes[hi] //assumes tx hashes are order and same length as call trace sequence
+		tx := config.CallTraceSequence[hi]
+
+		//eager build result log map per hash
+		logResultMap[hash] = make([]*types.Log, 0)
+
+		msg := tx.ToMessage(api.backend.RPCGasCap())
+
+		var traceResult interface{}
+		traceCtx := &txTraceContext{
+			hash: hash,
+		}
+
+		traceResult, traceError = api.traceTx(ctx, msg, traceCtx, vmctx, statedb, traceConfig)
+
+		traceResultMap[hash] = traceResult
+		// sh := statedb.GetState(common.HexToAddress("0x7f7411e820B32d799231ca502ED80Ba7dCe4B9E1"), common.HexToHash("0x8"))
+
+		// log.Info("Post Check", "hash", hash)
+	}
+
+	for _, l := range statedb.Logs() {
+		// log.Info("Post Log", "address", l.Address, "hash", l.TxHash, "data", hex.EncodeToString(l.Data), "topics", l.Topics)
+
+		//assumes res map is already built previously
+		logResultMap[l.TxHash] = append(logResultMap[l.TxHash], l)
+	}
+
+	// for hash, _ := range *config.CallTraceList {
+	// 	multiResult.TxLogs[hash] = statedb.GetLogs(hash)
+	// }
+
+	// msg := callArgs.ToMessage(api.backend.RPCGasCap())
+	// vmctx := core.NewEVMBlockContext(block.Header(), api.chainContext(ctx), nil)
+
+	// var traceConfig *TraceConfig
+	// if config != nil {
+	// 	traceConfig = &TraceConfig{
+	// 		LogConfig: config.LogConfig,
+	// 		Tracer:    config.Tracer,
+	// 		Timeout:   config.Timeout,
+	// 		Reexec:    config.Reexec,
+	// 	}
+	// }
+
+	//traceResult, err := api.traceTx(ctx, msg, new(txTraceContext), vmctx, statedb, traceConfig)
+
+	//NOTES:
+	// we can probably cut down on the log data sent back over IPC to reduce large traces from slowing down by sending more data than we need
+	//this will mean specifying topics we want and parsing data here before sending back
+	// we need to eliminate the JS tracer usage...
+
+	multiResult.TxLogs = logResultMap
+	multiResult.TracesResults = traceResultMap
+
+	traceStopTs := time.Since(traceStartTs)
+	multiResult.TraceDuration = traceStopTs
+
+	return multiResult, traceError
 }
 
 // traceTx configures a new tracer according to the provided configuration, and
@@ -866,6 +1006,7 @@ func (api *API) traceTx(ctx context.Context, message core.Message, txctx *txTrac
 		if len(result.Revert()) > 0 {
 			returnVal = fmt.Sprintf("%x", result.Revert())
 		}
+		log.Info("Tracer", "tracer was", "Struct Logger")
 		return &ethapi.ExecutionResult{
 			Gas:         result.UsedGas,
 			Failed:      result.Failed(),
@@ -874,6 +1015,7 @@ func (api *API) traceTx(ctx context.Context, message core.Message, txctx *txTrac
 		}, nil
 
 	case *Tracer:
+		log.Info("Tracer", "tracer was", "JS Tracer")
 		return tracer.GetResult()
 
 	default:

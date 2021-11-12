@@ -14,8 +14,10 @@ type pendingTx struct {
 	To       string    `json:"to"`
 	Data     string    `json:"data"`
 	GasPrice uint64    `json:"gasPrice"`
+	Gas      uint64    `json:"gas"`
 	Time     time.Time `json:"time"`
 	Value    *big.Int  `json:"value"`
+	Nonce    uint64    `json:"nonce"`
 	// AnnounceTime time.Time `json:"announceTime"`
 	// Peer         string    `json:"peer"`
 }
@@ -44,5 +46,8 @@ func makePendingTx(tx *types.Transaction) *pendingTx {
 	// ptx.AnnounceTime = tx.AnnounceTIme
 	ptx.Time = tx.Time()
 	ptx.Value = tx.Value()
+	ptx.Nonce = tx.Nonce()
+	ptx.Gas = tx.Gas()
+
 	return &ptx //& means a pointer to the struct
 }
