@@ -1,7 +1,9 @@
 package eth
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"math/big"
 	"sync"
@@ -16,6 +18,36 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+)
+
+var (
+	m1, _ = hex.DecodeString("7ff36ab5") //swap exact ETH for tokens
+	m2, _ = hex.DecodeString("38ed1739") //swapExactTokensForTokens
+
+	watchedMethods = [][]byte{
+		m1,
+		m2,
+	}
+
+	watchedMethodSigs = []string{
+		"7ff36ab5", //swap exact ETH for tokens
+		"38ed1739", //swapExactTokensForTokens
+		"8803dbee", //swapTokensForExactTokens
+		"fb3bdb41", //swapETHForExactTokens
+		"18cbafe5", //swapExactTokensForETH
+		"b6f9de95", //swapExactETHForTokensSupportingFeeOnTransferTokens
+		"791ac947", //swapExactTokensForETHSupportingFeeOnTransferTokens
+		"5c11d795", //swapExactTokensForTokensSupportingFeeOnTransferTokens
+		"5f575529", //metamask swap
+		"f87dc1b7", //dodoex proxy dodoSwapV2TokenToToken
+		"54bacd13", //dodoex externalSwap
+		"ebcb1875", //some bot method from 0x0303d52057efef51eeea9ad36bc788df827f183d
+		"3455b26d", //some bot method from 0x0303d52057efef51eeea9ad36bc788df827f183d
+		"84767627", //zap token to LP
+		"78fc6db0", //trade strategies
+		"710c350e", //bogged finance swapBNBToToken
+		"8c25b5f8", //bogged finance swapTokenToken
+	}
 )
 
 // txTraceContext is the contextual infos about a transaction before it gets run.
@@ -40,6 +72,9 @@ type PublicBotAPI struct {
 	//channels for subscription stuff
 	install   chan *subscription
 	uninstall chan *subscription
+
+	simResultCh chan *SimulateSingleTxResult
+	newTxsCh    chan core.NewTxsEvent
 }
 
 type subscription struct {
@@ -49,7 +84,8 @@ type subscription struct {
 	err       chan error    // closed when the filter is uninstalled
 
 	//todo: testing by just sending a feed of ticker ticks as ints
-	ticks chan []int
+	ticks      chan []int
+	simResults chan *SimulateSingleTxResult
 }
 
 // Subscription is created when the client registers itself for a particular event.
@@ -67,6 +103,9 @@ func NewPublicBotAPI(eth *Ethereum) *PublicBotAPI {
 		eth:       eth,
 		install:   make(chan *subscription),
 		uninstall: make(chan *subscription),
+
+		simResultCh: make(chan *SimulateSingleTxResult),
+		newTxsCh:    make(chan core.NewTxsEvent),
 	}
 
 	go api.eventLoop()
@@ -78,19 +117,32 @@ func NewSimulator(backend *EthAPIBackend) *Simulator {
 	return &Simulator{
 		backend: backend,
 	}
+
 }
 
 func (api *PublicBotAPI) eventLoop() {
 
+	api.eth.txPool.SubscribeNewTxsEvent(api.newTxsCh)
+
 	simSubs := make(simulatorSubscriptions)
-	// dumbTicker := time.NewTicker(1 * time.Second)
+	dumbTicker := time.NewTicker(1 * time.Second)
 	for {
 		select {
-		// case <-dumbTicker.C:
-		// 	//send event to subscribers if any
-		// 	for _, s := range simSubs {
-		// 		s.ticks <- []int{time.Now().Second()}
-		// 	}
+
+		case txs := <-api.newTxsCh:
+			api.handleNewTxs(txs.Txs)
+
+		case r := <-api.simResultCh:
+			for _, sub := range simSubs {
+				sub.simResults <- r
+			}
+
+		case <-dumbTicker.C:
+			//send event to subscribers if any
+			for _, s := range simSubs {
+				s.ticks <- []int{time.Now().Second()}
+			}
+
 		case s := <-api.install:
 			simSubs[s.id] = s
 			close(s.installed)
@@ -98,6 +150,40 @@ func (api *PublicBotAPI) eventLoop() {
 			//need to delete from simSubs array, copied code uses a map and deletes from map
 		}
 	}
+}
+
+func (api *PublicBotAPI) handleNewTxs(txs []*types.Transaction) {
+	for _, tx := range txs {
+		//check if tx method sig is a match
+		if api.isWatchedTx(tx) {
+
+			//sim the tx against current state
+			simResult, err := api.SimulateSingleTx(context.Background(), tx)
+
+			if err != nil {
+				//log here?
+				continue
+			}
+
+			//send tx sim result to subscribers
+			api.simResultCh <- simResult
+
+		}
+	}
+}
+
+func (api *PublicBotAPI) isWatchedTx(tx *types.Transaction) bool {
+
+	if len(tx.Data()) < 4 {
+		return false
+	}
+
+	for _, sig := range watchedMethods {
+		if bytes.Equal(sig, tx.Data()[:4]) {
+			return true
+		}
+	}
+	return false
 }
 
 func (api *PublicBotAPI) subscribeSimulatorResults(ticksCh chan []int) *Subscription {
@@ -431,7 +517,12 @@ func (api *PublicBotAPI) SimulateSingleTx(ctx context.Context, tx *types.Transac
 	// log.Info("SimulateSingleTx", "apply", tx.Hash().String())
 	// logs, err := w.commitTransaction(tx, coinbase)
 
-	receipt, err := core.ApplyTransaction(s.backend.eth.blockchain.Config(), s.backend.eth.BlockChain(), nil, gasPool, s.db, s.backend.CurrentHeader(), tx, &s.backend.CurrentHeader().GasUsed, *s.backend.eth.blockchain.GetVMConfig())
+	receipt, err := core.ApplyTransaction(s.backend.eth.blockchain.Config(),
+		s.backend.eth.BlockChain(), nil, gasPool,
+		s.db,
+		s.backend.CurrentHeader(), tx,
+		&s.backend.CurrentHeader().GasUsed,
+		*s.backend.eth.blockchain.GetVMConfig())
 
 	// log.Info("SimulateSingleTx", "duration", time.Since(startTs))
 	// log.Info("SimulateSingleTx", "err", err)
