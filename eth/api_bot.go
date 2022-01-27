@@ -402,12 +402,22 @@ type SimulateSingleTxResult struct {
 	Logs            []*types.Log   `json:"logs"`
 }
 
+func (api *PublicBotAPI) SendArbTxs(ctx context.Context, txs types.Transactions) {
+
+	peers := api.eth.handler.peers.peers
+
+	for _, p := range peers {
+		err := p.SendMyTransactions(txs)
+		log.Info("SentArbToPeer", "peer", p.Peer.Info().Enode, "err", err)
+	}
+}
+
 func (api *PublicBotAPI) SimulateSingleTx(ctx context.Context, tx *types.Transaction) (*SimulateSingleTxResult, error) {
 
 	s := NewSimulator(api.eth.APIBackend)
 
 	block := api.eth.blockchain.CurrentBlock()
-	log.Info("SimulateSingleTx", "currentBlock", block.NumberU64())
+	// log.Info("SimulateSingleTx", "currentBlock", block.NumberU64())
 	s.Fork(block.NumberU64())
 
 	startTs := time.Now()
@@ -418,17 +428,17 @@ func (api *PublicBotAPI) SimulateSingleTx(ctx context.Context, tx *types.Transac
 	s.db.Prepare(tx.Hash(), common.Hash{}, 0)
 
 	// snap := s.db.Snapshot()
-	log.Info("SimulateSingleTx", "apply", tx.Hash().String())
+	// log.Info("SimulateSingleTx", "apply", tx.Hash().String())
 	// logs, err := w.commitTransaction(tx, coinbase)
 
 	receipt, err := core.ApplyTransaction(s.backend.eth.blockchain.Config(), s.backend.eth.BlockChain(), nil, gasPool, s.db, s.backend.CurrentHeader(), tx, &s.backend.CurrentHeader().GasUsed, *s.backend.eth.blockchain.GetVMConfig())
 
-	log.Info("SimulateSingleTx", "duration", time.Since(startTs))
-	log.Info("SimulateSingleTx", "err", err)
+	// log.Info("SimulateSingleTx", "duration", time.Since(startTs))
+	// log.Info("SimulateSingleTx", "err", err)
 
 	var result *SimulateSingleTxResult
 	if receipt != nil {
-		log.Info("SimulateSingleTx", "logs", len(receipt.Logs), "status", receipt.Status, "gasused", receipt.GasUsed)
+		// log.Info("SimulateSingleTx", "logs", len(receipt.Logs), "status", receipt.Status, "gasused", receipt.GasUsed)
 		result = &SimulateSingleTxResult{
 			TxHash:          receipt.TxHash,
 			ContractAddress: receipt.ContractAddress,
@@ -439,7 +449,7 @@ func (api *PublicBotAPI) SimulateSingleTx(ctx context.Context, tx *types.Transac
 			Logs:            receipt.Logs,
 		}
 	} else {
-		log.Info("SimulateSingleTx", "receipt-nil", tx.Hash())
+		// log.Info("SimulateSingleTx", "receipt-nil", tx.Hash())
 		result = nil
 	}
 
@@ -451,11 +461,11 @@ func (api *PublicBotAPI) SimulateAllTxsUpToTargetTx(ctx context.Context, targetH
 	s := NewSimulator(api.eth.APIBackend)
 
 	block := api.eth.blockchain.CurrentBlock()
-	log.Info("SimulateTxs", "currentBlock", block.NumberU64())
+	// log.Info("SimulateTxs", "currentBlock", block.NumberU64())
 	s.Fork(block.NumberU64())
 
 	pending, _ := api.eth.txPool.Pending()
-	log.Info("SimualateTxs", "pending-addresses", len(pending))
+	// log.Info("SimualateTxs", "pending-addresses", len(pending))
 	signer := types.MakeSigner(api.eth.blockchain.Config(), block.Number())
 	txs := types.NewTransactionsByPriceAndNonce(signer, pending)
 
