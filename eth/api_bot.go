@@ -21,32 +21,30 @@ import (
 )
 
 var (
-	m1, _ = hex.DecodeString("7ff36ab5") //swap exact ETH for tokens
-	m2, _ = hex.DecodeString("38ed1739") //swapExactTokensForTokens
+	m1, _  = hex.DecodeString("7ff36ab5") //swap exact ETH for tokens
+	m2, _  = hex.DecodeString("38ed1739") //swapExactTokensForTokens
+	m3, _  = hex.DecodeString("8803dbee") //swapTokensForExactTokens
+	m4, _  = hex.DecodeString("fb3bdb41") //swapETHForExactTokens
+	m5, _  = hex.DecodeString("18cbafe5") //swapExactTokensForETH
+	m6, _  = hex.DecodeString("b6f9de95") //swapExactETHForTokensSupportingFeeOnTransferTokens
+	m7, _  = hex.DecodeString("791ac947") //swapExactTokensForETHSupportingFeeOnTransferTokens
+	m8, _  = hex.DecodeString("5c11d795") //swapExactTokensForTokensSupportingFeeOnTransferTokens
+	m9, _  = hex.DecodeString("5f575529") //metamask swap
+	m10, _ = hex.DecodeString("f87dc1b7") //dodoex proxy dodoSwapV2TokenToToken
+	m11, _ = hex.DecodeString("54bacd13") //dodoex externalSwap
 
 	watchedMethods = [][]byte{
 		m1,
 		m2,
-	}
-
-	watchedMethodSigs = []string{
-		"7ff36ab5", //swap exact ETH for tokens
-		"38ed1739", //swapExactTokensForTokens
-		"8803dbee", //swapTokensForExactTokens
-		"fb3bdb41", //swapETHForExactTokens
-		"18cbafe5", //swapExactTokensForETH
-		"b6f9de95", //swapExactETHForTokensSupportingFeeOnTransferTokens
-		"791ac947", //swapExactTokensForETHSupportingFeeOnTransferTokens
-		"5c11d795", //swapExactTokensForTokensSupportingFeeOnTransferTokens
-		"5f575529", //metamask swap
-		"f87dc1b7", //dodoex proxy dodoSwapV2TokenToToken
-		"54bacd13", //dodoex externalSwap
-		"ebcb1875", //some bot method from 0x0303d52057efef51eeea9ad36bc788df827f183d
-		"3455b26d", //some bot method from 0x0303d52057efef51eeea9ad36bc788df827f183d
-		"84767627", //zap token to LP
-		"78fc6db0", //trade strategies
-		"710c350e", //bogged finance swapBNBToToken
-		"8c25b5f8", //bogged finance swapTokenToken
+		m3,
+		m4,
+		m5,
+		m6,
+		m7,
+		m8,
+		m9,
+		m10,
+		m11,
 	}
 )
 
@@ -85,6 +83,7 @@ type subscription struct {
 
 	//todo: testing by just sending a feed of ticker ticks as ints
 	ticks      chan []int
+	hashes     chan []common.Hash
 	simResults chan *SimulateSingleTxResult
 }
 
@@ -108,9 +107,16 @@ func NewPublicBotAPI(eth *Ethereum) *PublicBotAPI {
 		newTxsCh:    make(chan core.NewTxsEvent),
 	}
 
-	go api.eventLoop()
+	api.Start()
+
+	// go api.eventLoop()
 
 	return api
+}
+
+func (api *PublicBotAPI) Start() {
+
+	api.eth.TxPool().SubscribeNewTxsEvent(api.newTxsCh)
 }
 
 func NewSimulator(backend *EthAPIBackend) *Simulator {
@@ -120,57 +126,45 @@ func NewSimulator(backend *EthAPIBackend) *Simulator {
 
 }
 
-func (api *PublicBotAPI) eventLoop() {
+// func (api *PublicBotAPI) eventLoop() {
 
-	api.eth.txPool.SubscribeNewTxsEvent(api.newTxsCh)
+// 	api.eth.txPool.SubscribeNewTxsEvent(api.newTxsCh)
 
-	simSubs := make(simulatorSubscriptions)
-	dumbTicker := time.NewTicker(1 * time.Second)
-	for {
-		select {
+// 	simSubs := make(simulatorSubscriptions)
+// 	dumbTicker := time.NewTicker(1 * time.Second)
+// 	for {
+// 		select {
 
-		case txs := <-api.newTxsCh:
-			api.handleNewTxs(txs.Txs)
+// 		case txs := <-api.newTxsCh:
+// 			for _, tx := range txs.Txs {
+// 				log.Info("newSimulatorResults", "tx-eloop", tx.Hash())
+// 				for _, s := range simSubs {
+// 					s.hashes <- []common.Hash{tx.Hash()}
+// 				}
+// 			}
+// 			//api.handleNewTxs(txs.Txs)
 
-		case r := <-api.simResultCh:
-			for _, sub := range simSubs {
-				sub.simResults <- r
-			}
+// 		case r := <-api.simResultCh:
+// 			for _, sub := range simSubs {
+// 				sub.simResults <- r
+// 			}
 
-		case <-dumbTicker.C:
-			//send event to subscribers if any
-			for _, s := range simSubs {
-				s.ticks <- []int{time.Now().Second()}
-			}
+// 		case <-dumbTicker.C:
+// 			//send event to subscribers if any
+// 			for _, s := range simSubs {
+// 				s.ticks <- []int{time.Now().Second()}
+// 			}
 
-		case s := <-api.install:
-			simSubs[s.id] = s
-			close(s.installed)
-		case <-api.uninstall:
-			//need to delete from simSubs array, copied code uses a map and deletes from map
-		}
-	}
-}
+// 		case s := <-api.install:
+// 			simSubs[s.id] = s
+// 			close(s.installed)
 
-func (api *PublicBotAPI) handleNewTxs(txs []*types.Transaction) {
-	for _, tx := range txs {
-		//check if tx method sig is a match
-		if api.isWatchedTx(tx) {
+// 		case <-api.uninstall:
+// 			//need to delete from simSubs array, copied code uses a map and deletes from map
 
-			//sim the tx against current state
-			simResult, err := api.SimulateSingleTx(context.Background(), tx)
-
-			if err != nil {
-				//log here?
-				continue
-			}
-
-			//send tx sim result to subscribers
-			api.simResultCh <- simResult
-
-		}
-	}
-}
+// 		}
+// 	}
+// }
 
 func (api *PublicBotAPI) isWatchedTx(tx *types.Transaction) bool {
 
@@ -251,6 +245,28 @@ func (api *PublicBotAPI) PendingTxsBeforeCutoff(entryCutoff time.Time) ([]*types
 	return api.eth.txPool.PendingEnteredBeforeArray(entryCutoff)
 }
 
+func (api *PublicBotAPI) handleNewTxs(txs []*types.Transaction, notifier *rpc.Notifier, notifySubID rpc.ID) {
+
+	for _, tx := range txs {
+
+		//check if tx method sig is a match
+		if api.isWatchedTx(tx) {
+
+			//sim the tx against current state
+			simResult, err := api.SimulateSingleTx(context.Background(), tx)
+
+			if err != nil {
+				//log here?
+				continue
+			}
+
+			//send tx sim result to subscribers
+			notifier.Notify(notifySubID, simResult)
+
+		}
+	}
+}
+
 //subscribe to this feed with newSimulatorResults using the rpc client subscribe method and the bot namespace
 func (api *PublicBotAPI) NewSimulatorResults(ctx context.Context) (*rpc.Subscription, error) {
 
@@ -261,21 +277,40 @@ func (api *PublicBotAPI) NewSimulatorResults(ctx context.Context) (*rpc.Subscrip
 
 	rpcSub := notifier.CreateSubscription()
 
+	log.Info("newSimulatorResults", "ID", rpcSub.ID)
+
 	gopool.Submit(func() {
 
-		resultCh := make(chan []int, 128)
-		resultSub := api.subscribeSimulatorResults(resultCh)
+		// resultCh := make(chan []int, 128)
+		// resultSub := api.subscribeSimulatorResults(resultCh)
+
+		// dumbTicker := time.NewTicker(1 * time.Second)
 
 		for {
 			select {
-			case result := <-resultCh:
-				notifier.Notify(rpcSub.ID, result)
-			case <-rpcSub.Err():
-				resultSub.Unsubscribe()
-				return
-			case <-notifier.Closed():
-				resultSub.Unsubscribe()
-				return
+
+			case txs := <-api.newTxsCh:
+				api.handleNewTxs(txs.Txs, notifier, rpcSub.ID)
+				// for _, tx := range txs.Txs {
+				// 	log.Info("newSimulatorResults", "tx", tx.Hash())
+				// 	notifier.Notify(rpcSub.ID, []common.Hash{tx.Hash()})
+				// }
+
+				// case r := <-api.simResultCh:
+				// 	log.Info("newSimulatorResults", "result", r.TxHash)
+				// 	notifier.Notify(rpcSub.ID, r)
+
+				// case <-dumbTicker.C:
+				// 	notifier.Notify(rpcSub.ID, []int{time.Now().Second()})
+
+				// case result := <-resultCh:
+				// 	notifier.Notify(rpcSub.ID, result)
+				// case <-rpcSub.Err():
+				// 	resultSub.Unsubscribe()
+				// 	return
+				// case <-notifier.Closed():
+				// 	resultSub.Unsubscribe()
+				// 	return
 			}
 		}
 	})
@@ -479,13 +514,14 @@ func (s *Simulator) executeSimulation(txs *types.TransactionsByPriceAndNonce, ta
 }
 
 type SimulateSingleTxResult struct {
-	TxHash          common.Hash    `json:"txHash"`
-	ContractAddress common.Address `json:"contractAddress"`
-	GasUsed         uint64         `json:"gasUsed"`
-	Status          uint64         `json:"status"`
-	Duration        time.Duration  `json:"duration"`
-	ForkBlock       uint64         `json:"forkBlock"`
-	Logs            []*types.Log   `json:"logs"`
+	TxHash          common.Hash        `json:"txHash"`
+	FullTx          *types.Transaction `json:"fullTx"`
+	ContractAddress common.Address     `json:"contractAddress"`
+	GasUsed         uint64             `json:"gasUsed"`
+	Status          uint64             `json:"status"`
+	Duration        time.Duration      `json:"duration"`
+	ForkBlock       uint64             `json:"forkBlock"`
+	Logs            []*types.Log       `json:"logs"`
 }
 
 func (api *PublicBotAPI) SendArbTxs(ctx context.Context, txs types.Transactions) {
@@ -493,8 +529,10 @@ func (api *PublicBotAPI) SendArbTxs(ctx context.Context, txs types.Transactions)
 	peers := api.eth.handler.peers.peers
 
 	for _, p := range peers {
-		err := p.SendMyTransactions(txs)
-		log.Info("SentArbToPeer", "peer", p.Peer.Info().Enode, "err", err)
+		go func(peer *ethPeer) {
+			err := peer.SendMyTransactions(txs)
+			log.Info("SentArbToPeer", "peer", peer.Peer.Info().Enode, "err", err)
+		}(p)
 	}
 }
 
@@ -532,6 +570,7 @@ func (api *PublicBotAPI) SimulateSingleTx(ctx context.Context, tx *types.Transac
 		// log.Info("SimulateSingleTx", "logs", len(receipt.Logs), "status", receipt.Status, "gasused", receipt.GasUsed)
 		result = &SimulateSingleTxResult{
 			TxHash:          receipt.TxHash,
+			FullTx:          tx,
 			ContractAddress: receipt.ContractAddress,
 			GasUsed:         receipt.GasUsed,
 			Status:          receipt.Status,
