@@ -21,6 +21,7 @@ import (
 	"fmt"
 	mrand "math/rand"
 	"sort"
+	"sync"
 	"time"
 
 	mapset "github.com/deckarep/golang-set"
@@ -36,7 +37,7 @@ import (
 const (
 	// maxTxAnnounces is the maximum number of unique transaction a peer
 	// can announce in a short time.
-	maxTxAnnounces = 4096
+	maxTxAnnounces = 32768 //32768 //was 4096
 
 	// maxTxRetrievals is the maximum transaction number can be fetched in one
 	// request. The rationale to pick 256 is:
@@ -46,7 +47,7 @@ const (
 	//   - However the maximum size of a single transaction is raised to 128KB,
 	//     so pick a middle value here to ensure we can maximize the efficiency
 	//     of the retrieval and response size overflow won't happen in most cases.
-	maxTxRetrievals = 256
+	maxTxRetrievals = 512 //512 //was 256
 
 	// maxTxUnderpricedSetSize is the size of the underpriced transaction set that
 	// is used to track recent transactions that have been dropped so we don't
@@ -55,7 +56,7 @@ const (
 
 	// txArriveTimeout is the time allowance before an announced transaction is
 	// explicitly requested.
-	txArriveTimeout = 500 * time.Millisecond
+	txArriveTimeout = 10 * time.Millisecond //was 500 ms
 
 	// txGatherSlack is the interval used to collate almost-expired announces
 	// with network fetches.
@@ -176,6 +177,18 @@ type TxFetcher struct {
 	step  chan struct{} // Notification channel when the fetcher loop iterates
 	clock mclock.Clock  // Time wrapper to simulate in tests
 	rand  *mrand.Rand   // Randomizer to use in tests instead of map range loops (soft-random)
+
+	//AMH: tracker peer stuff
+	hashesFetchedByPeer map[string]int64
+	announceTripTime    map[common.Hash]*AnnounceTripTimeInfo
+	annLock             sync.Mutex
+}
+
+type AnnounceTripTimeInfo struct {
+	Hash          common.Hash
+	Origin        string
+	FirstAnnounce time.Time
+	Returned      time.Time
 }
 
 // NewTxFetcher creates a transaction fetcher to retrieve transaction
@@ -190,24 +203,26 @@ func NewTxFetcherForTests(
 	hasTx func(common.Hash) bool, addTxs func([]*types.Transaction) []error, fetchTxs func(string, []common.Hash) error,
 	clock mclock.Clock, rand *mrand.Rand) *TxFetcher {
 	return &TxFetcher{
-		notify:      make(chan *txAnnounce),
-		cleanup:     make(chan *txDelivery),
-		drop:        make(chan *txDrop),
-		quit:        make(chan struct{}),
-		waitlist:    make(map[common.Hash]map[string]struct{}),
-		waittime:    make(map[common.Hash]mclock.AbsTime),
-		waitslots:   make(map[string]map[common.Hash]struct{}),
-		announces:   make(map[string]map[common.Hash]struct{}),
-		announced:   make(map[common.Hash]map[string]struct{}),
-		fetching:    make(map[common.Hash]string),
-		requests:    make(map[string]*txRequest),
-		alternates:  make(map[common.Hash]map[string]struct{}),
-		underpriced: mapset.NewSet(),
-		hasTx:       hasTx,
-		addTxs:      addTxs,
-		fetchTxs:    fetchTxs,
-		clock:       clock,
-		rand:        rand,
+		notify:              make(chan *txAnnounce),
+		cleanup:             make(chan *txDelivery),
+		drop:                make(chan *txDrop),
+		quit:                make(chan struct{}),
+		waitlist:            make(map[common.Hash]map[string]struct{}),
+		waittime:            make(map[common.Hash]mclock.AbsTime),
+		waitslots:           make(map[string]map[common.Hash]struct{}),
+		announces:           make(map[string]map[common.Hash]struct{}),
+		announced:           make(map[common.Hash]map[string]struct{}),
+		fetching:            make(map[common.Hash]string),
+		requests:            make(map[string]*txRequest),
+		alternates:          make(map[common.Hash]map[string]struct{}),
+		underpriced:         mapset.NewSet(),
+		hasTx:               hasTx,
+		addTxs:              addTxs,
+		fetchTxs:            fetchTxs,
+		clock:               clock,
+		rand:                rand,
+		hashesFetchedByPeer: make(map[string]int64),
+		announceTripTime:    make(map[common.Hash]*AnnounceTripTimeInfo),
 	}
 }
 
@@ -262,6 +277,18 @@ func (f *TxFetcher) Notify(peer string, hashes []common.Hash) error {
 // direct request replies. The differentiation is important so the fetcher can
 // re-shedule missing transactions as soon as possible.
 func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) error {
+
+	//AMH: track receipt of tx after announce
+	// for _, tx := range txs {
+	// 	if a, exists := f.announceTripTime[tx.Hash()]; exists {
+	// 		ex := time.Since(a.FirstAnnounce).Microseconds()
+	// 		//1,000,000 micro == 1 second
+	// 		log.Info("Tx Received", "peer", a.Origin, "time-micro", ex)
+	// 		//delete to free ram
+	// 		//delete(f.announceTripTime, a.Hash)
+	// 	}
+	// }
+
 	// Keep track of all the propagated transactions
 	if direct {
 		txReplyInMeter.Mark(int64(len(txs)))
@@ -276,6 +303,17 @@ func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) 
 		underpriced int64
 		otherreject int64
 	)
+
+	//AMH: tag each tx with peer id
+	// f.annLock.Lock()
+	for _, tx := range txs {
+		tx.PeerID = peer
+		// if a, exists := f.announceTripTime[tx.Hash()]; exists {
+		// 	tx.AnnounceTIme = a.FirstAnnounce //track time annouced all the way through to bot client
+		// }
+	}
+	// f.annLock.Unlock()
+
 	errs := f.addTxs(txs)
 	for i, err := range errs {
 		if err != nil {
@@ -355,6 +393,19 @@ func (f *TxFetcher) loop() {
 	for {
 		select {
 		case ann := <-f.notify:
+			//AMH: track announce time to return
+			// f.annLock.Lock()
+			// for _, a := range ann.hashes {
+			// 	if _, exists := f.announceTripTime[a]; !exists {
+			// 		f.announceTripTime[a] = &AnnounceTripTimeInfo{
+			// 			Hash:          a,
+			// 			Origin:        ann.origin,
+			// 			FirstAnnounce: time.Now(),
+			// 		}
+			// 	}
+			// }
+			// f.annLock.Unlock()
+
 			// Drop part of the new announcements if there are too many accumulated.
 			// Note, we could but do not filter already known transactions here as
 			// the probability of something arriving between this call and the pre-
@@ -443,6 +494,8 @@ func (f *TxFetcher) loop() {
 			// ones into the retrieval queues
 			actives := make(map[string]struct{})
 			for hash, instance := range f.waittime {
+				//AMH: log stuff
+				// log.Info("Wait expired", "hash", hash.String())
 				if time.Duration(f.clock.Now()-instance)+txGatherSlack > txArriveTimeout {
 					// Transaction expired without propagation, schedule for retrieval
 					if f.announced[hash] != nil {
@@ -795,8 +848,20 @@ func (f *TxFetcher) scheduleFetches(timer *mclock.Timer, timeout chan struct{}, 
 		if len(hashes) > 0 {
 			f.requests[peer] = &txRequest{hashes: hashes, time: f.clock.Now()}
 			txRequestOutMeter.Mark(int64(len(hashes)))
+			//AMH: track hashses fetched by peer
+			// if _, exists := f.hashesFetchedByPeer[peer]; !exists {
+			// 	f.hashesFetchedByPeer[peer] = int64(len(hashes))
+			// } else {
+			// 	f.hashesFetchedByPeer[peer] += int64(len(hashes))
+			// }
+
 			p := peer
 			gopool.Submit(func() {
+				//AMH: logs
+				// if len(hashes) > 10 {
+				// 	log.Info("Fetching hashes from peer", "txs", len(hashes), "peer", p, "total", f.hashesFetchedByPeer[p])
+				// }
+
 				// Try to fetch the transactions, but in case of a request
 				// failure (e.g. peer disconnected), reschedule the hashes.
 				if err := f.fetchTxs(p, hashes); err != nil {

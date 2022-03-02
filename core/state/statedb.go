@@ -234,6 +234,7 @@ func (s *StateDB) IsLightProcessed() bool {
 func (s *StateDB) setError(err error) {
 	if s.dbErr == nil {
 		s.dbErr = err
+
 	}
 }
 

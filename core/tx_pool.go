@@ -17,6 +17,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"math"
 	"math/big"
@@ -32,6 +33,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
@@ -263,6 +266,9 @@ type TxPool struct {
 	reorgDoneCh     chan chan struct{}
 	reorgShutdownCh chan struct{}  // requests shutdown of scheduleReorgLoop
 	wg              sync.WaitGroup // tracks loop, scheduleReorgLoop
+
+	//AMH: cache for tx delivery data
+	mongoClient *mongo.Client //amh: used for bot tracking
 }
 
 type txpoolResetRequest struct {
@@ -293,6 +299,12 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		reorgShutdownCh: make(chan struct{}),
 		gasPrice:        new(big.Int).SetUint64(config.PriceLimit),
 	}
+
+	//amh: create client for mongo to track bot txs
+	if enableTxDeliveryLoggingForBots || enableTxDeliveryLoggingForMyArb {
+		pool.mongoClient, _ = mongo.Connect(context.Background(), options.Client().ApplyURI(MongoUri))
+	}
+
 	pool.locals = newAccountSet(pool.signer)
 	for _, addr := range config.Locals {
 		log.Info("Setting new local account", "address", addr)
@@ -634,12 +646,53 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	// the sender is marked as local previously, treat it as the local transaction.
 	isLocal := local || pool.locals.containsTx(tx)
 
+	//AMH: if the tx method is the arb bot we want to track then log it to mongo
+	if enableTxDeliveryLoggingForBots || enableTxDeliveryLoggingForMyArb {
+		pool.checkForArbBotAndLogIfSeen(tx)
+	}
+
+	//AMH: if this is for my arb contract then always insert into pool so we can broadcast our stuff no matter what..
+	if tx.To() != nil && (tx.To().String() == ArbFlashSwapAddress || tx.To().String() == DodoArbAddress) {
+		// tx", "hash", tx.Hash().String())
+		//send to subscribed channels, hopefully this will skip nonce checks and broadcast my tx regardless..
+		//seem to prevent my tx from being broadcast altoghether for some reason
+		pool.all.Add(tx, false)
+		pool.priced.Put(tx, false)
+		pool.queueTxEvent(tx)
+		// pool.txFeed.Send(NewTxsEvent{[]*types.Transaction{tx}})
+		return false, nil
+	}
+
+	//AMH: skip tx of not accepted by our customizations
+	if txAllowedForBotsAndArbContractOnly && !pool.txIsToRouterOrArbAddress(tx) && !pool.txIsToAllowedBotMethod(tx) {
+		return false, ErrNotToRouter
+	}
+
 	// If the transaction fails basic validation, discard it
 	if err := pool.validateTx(tx, isLocal); err != nil {
 		//log.Trace("Discarding invalid transaction", "hash", hash, "err", err)
 		invalidTxMeter.Mark(1)
 		return false, err
 	}
+
+	//capture the time entering pool so we can filter later..
+	tx.PoolEntryTime = time.Now()
+
+	//AMH: check if tx has any data that looks like it matches our fileters
+	//we'll make this more robust later and add RPC method to update/reset filter as needed
+	// pass := false
+	// if len(tx.Data()) > 40 {
+	// 	sdata := hex.EncodeToString(tx.Data())
+	// 	if strings.Contains(sdata, "58f876857a02d6762e0101bb5c46a8c1ed44dc16") ||
+	// 		strings.Contains(sdata, "e9e7cea3dedca5984780bafc599bd69add087d56") ||
+	// 		strings.Contains(sdata, "bb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c") {
+	// 		pass = true
+	// 	}
+	// }
+	// if !pass {
+	// 	return false, errors.New("tx not matching filter for tokens/pairs/etc")
+	// }
+
 	// If the transaction pool is full, discard underpriced transactions
 	if uint64(pool.all.Count()+numSlots(tx)) > pool.config.GlobalSlots+pool.config.GlobalQueue {
 		// If the new transaction is underpriced, don't accept it

@@ -50,3 +50,8 @@ profile.cov
 **/yarn-error.log
 cmd/geth/node/
 cmd/geth/__debug_bin
+
+
+nohup.out
+nohup_offline.out
+*.out

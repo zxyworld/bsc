@@ -20,7 +20,6 @@ package filters
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -78,6 +77,9 @@ type subscription struct {
 	headers   chan *types.Header
 	installed chan struct{} // closed when the filter is installed
 	err       chan error    // closed when the filter is uninstalled
+
+	//AMH: pending tx channel for my custom pending tx type
+	pending chan []*pendingTx
 }
 
 // EventSystem creates subscriptions, processes events and broadcasts them to the
@@ -188,39 +190,43 @@ func (es *EventSystem) subscribe(sub *subscription) *Subscription {
 // given criteria to the given logs channel. Default value for the from and to
 // block is "latest". If the fromBlock > toBlock an error is returned.
 func (es *EventSystem) SubscribeLogs(crit ethereum.FilterQuery, logs chan []*types.Log) (*Subscription, error) {
-	var from, to rpc.BlockNumber
-	if crit.FromBlock == nil {
-		from = rpc.LatestBlockNumber
-	} else {
-		from = rpc.BlockNumber(crit.FromBlock.Int64())
-	}
-	if crit.ToBlock == nil {
-		to = rpc.LatestBlockNumber
-	} else {
-		to = rpc.BlockNumber(crit.ToBlock.Int64())
-	}
+	// var from, to rpc.BlockNumber
+	// if crit.FromBlock == nil {
+	// 	from = rpc.LatestBlockNumber
+	// } else {
+	// 	from = rpc.BlockNumber(crit.FromBlock.Int64())
+	// }
+	// if crit.ToBlock == nil {
+	// 	to = rpc.LatestBlockNumber
+	// } else {
+	// 	to = rpc.BlockNumber(crit.ToBlock.Int64())
+	// }
 
-	// only interested in pending logs
-	if from == rpc.PendingBlockNumber && to == rpc.PendingBlockNumber {
-		return es.subscribePendingLogs(crit, logs), nil
-	}
-	// only interested in new mined logs
-	if from == rpc.LatestBlockNumber && to == rpc.LatestBlockNumber {
-		return es.subscribeLogs(crit, logs), nil
-	}
-	// only interested in mined logs within a specific block range
-	if from >= 0 && to >= 0 && to >= from {
-		return es.subscribeLogs(crit, logs), nil
-	}
-	// interested in mined logs from a specific block number, new logs and pending logs
-	if from >= rpc.LatestBlockNumber && to == rpc.PendingBlockNumber {
-		return es.subscribeMinedPendingLogs(crit, logs), nil
-	}
-	// interested in logs from a specific block number to new mined blocks
-	if from >= 0 && to == rpc.LatestBlockNumber {
-		return es.subscribeLogs(crit, logs), nil
-	}
-	return nil, fmt.Errorf("invalid from and to block combination: from > to")
+	log.Info("AMH: Subscribed to pending logs...")
+	return es.subscribePendingLogs(crit, logs), nil
+
+	// // only interested in pending logs
+	// if from == rpc.PendingBlockNumber && to == rpc.PendingBlockNumber {
+	// 	log.Info("AMH: Subscribed to pending logs...")
+	// 	return es.subscribePendingLogs(crit, logs), nil
+	// }
+	// // only interested in new mined logs
+	// if from == rpc.LatestBlockNumber && to == rpc.LatestBlockNumber {
+	// 	return es.subscribeLogs(crit, logs), nil
+	// }
+	// // only interested in mined logs within a specific block range
+	// if from >= 0 && to >= 0 && to >= from {
+	// 	return es.subscribeLogs(crit, logs), nil
+	// }
+	// // interested in mined logs from a specific block number, new logs and pending logs
+	// if from >= rpc.LatestBlockNumber && to == rpc.PendingBlockNumber {
+	// 	return es.subscribeMinedPendingLogs(crit, logs), nil
+	// }
+	// // interested in logs from a specific block number to new mined blocks
+	// if from >= 0 && to == rpc.LatestBlockNumber {
+	// 	return es.subscribeLogs(crit, logs), nil
+	// }
+	// return nil, fmt.Errorf("invalid from and to block combination: from > to")
 }
 
 // subscribeMinedPendingLogs creates a subscription that returned mined and
@@ -292,16 +298,17 @@ func (es *EventSystem) SubscribeNewHeads(headers chan *types.Header) *Subscripti
 
 // SubscribePendingTxs creates a subscription that writes transaction hashes for
 // transactions that enter the transaction pool.
-func (es *EventSystem) SubscribePendingTxs(hashes chan []common.Hash) *Subscription {
+func (es *EventSystem) SubscribePendingTxs(pendingTxs chan []*pendingTx) *Subscription {
 	sub := &subscription{
-		id:        rpc.NewID(),
-		typ:       PendingTransactionsSubscription,
-		created:   time.Now(),
-		logs:      make(chan []*types.Log),
-		hashes:    hashes,
+		id:      rpc.NewID(),
+		typ:     PendingTransactionsSubscription,
+		created: time.Now(),
+		logs:    make(chan []*types.Log),
+		// hashes:    hashes,
 		headers:   make(chan *types.Header),
 		installed: make(chan struct{}),
 		err:       make(chan error),
+		pending:   pendingTxs,
 	}
 	return es.subscribe(sub)
 }
@@ -342,12 +349,14 @@ func (es *EventSystem) handleRemovedLogs(filters filterIndex, ev core.RemovedLog
 }
 
 func (es *EventSystem) handleTxsEvent(filters filterIndex, ev core.NewTxsEvent) {
-	hashes := make([]common.Hash, 0, len(ev.Txs))
+	//AMH: modified to send populated pending tx data instead of just hashes
+	pending := make([]*pendingTx, 0, len(ev.Txs))
 	for _, tx := range ev.Txs {
-		hashes = append(hashes, tx.Hash())
+		ptx := makePendingTx(tx)
+		pending = append(pending, ptx)
 	}
 	for _, f := range filters[PendingTransactionsSubscription] {
-		f.hashes <- hashes
+		f.pending <- pending
 	}
 }
 
@@ -365,7 +374,6 @@ func (es *EventSystem) handleChainEvent(filters filterIndex, ev core.ChainEvent)
 		})
 	}
 }
-
 func (es *EventSystem) lightFilterNewHead(newHeader *types.Header, callBack func(*types.Header, bool)) {
 	oldh := es.lastHead
 	es.lastHead = newHeader

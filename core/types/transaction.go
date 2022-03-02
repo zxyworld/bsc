@@ -49,6 +49,11 @@ type Transaction struct {
 	inner TxData    // Consensus contents of a transaction
 	time  time.Time // Time first seen locally (spam avoidance)
 
+	//AMH: adding peer tracking
+	PeerID string
+
+	PoolEntryTime time.Time
+
 	// caches
 	hash atomic.Value
 	size atomic.Value
