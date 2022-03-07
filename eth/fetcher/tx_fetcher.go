@@ -55,11 +55,11 @@ const (
 
 	// txArriveTimeout is the time allowance before an announced transaction is
 	// explicitly requested.
-	txArriveTimeout = 500 * time.Millisecond
+	txArriveTimeout = 5 * time.Millisecond
 
 	// txGatherSlack is the interval used to collate almost-expired announces
 	// with network fetches.
-	txGatherSlack = 100 * time.Millisecond
+	txGatherSlack = 1 * time.Millisecond
 )
 
 var (
@@ -176,6 +176,8 @@ type TxFetcher struct {
 	step  chan struct{} // Notification channel when the fetcher loop iterates
 	clock mclock.Clock  // Time wrapper to simulate in tests
 	rand  *mrand.Rand   // Randomizer to use in tests instead of map range loops (soft-random)
+
+	hashAnnounceTracker map[common.Hash]time.Time
 }
 
 // NewTxFetcher creates a transaction fetcher to retrieve transaction
@@ -208,6 +210,8 @@ func NewTxFetcherForTests(
 		fetchTxs:    fetchTxs,
 		clock:       clock,
 		rand:        rand,
+
+		hashAnnounceTracker: make(map[common.Hash]time.Time),
 	}
 }
 
@@ -235,6 +239,7 @@ func (f *TxFetcher) Notify(peer string, hashes []common.Hash) error {
 			underpriced++
 
 		default:
+			// f.hashAnnounceTracker[hash] = time.Now()
 			unknowns = append(unknowns, hash)
 		}
 	}
@@ -276,6 +281,17 @@ func (f *TxFetcher) Enqueue(peer string, txs []*types.Transaction, direct bool) 
 		underpriced int64
 		otherreject int64
 	)
+
+	//AMH: tag each tx with peer id
+	for _, tx := range txs {
+		tx.PeerID = peer
+
+		// if a, exists := f.hashAnnounceTracker[tx.Hash()]; exists {
+		// 	tx.AnnounceToReceiveDuration = time.Since(a) //track time annouced all the way through to bot client
+		// 	log.Info("announce-track", "hash", tx.Hash(), "elapsed", tx.AnnounceToReceiveDuration)
+		// }
+	}
+
 	errs := f.addTxs(txs)
 	for i, err := range errs {
 		if err != nil {

@@ -852,6 +852,14 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		news = make([]*types.Transaction, 0, len(txs))
 	)
 	for i, tx := range txs {
+		//AMH; log competitor tx
+		if tx.To() != nil && tx.To().String() == "0x162aE0336389e8698b98758265d460Da0Fe528fC" {
+			log.Info("comp-tx", "hash", tx.Hash(), "gasprice", tx.GasPrice().String(), "gaslimit", tx.Gas(), "nonce", tx.Nonce(), "peer", tx.PeerID, "time", tx.Time())
+		}
+		if tx.To() != nil && tx.To().String() == "0x8f71950eA521447666f48b98B33193aFb4b55547" {
+			log.Info("my-tx", "hash", tx.Hash(), "gasprice", tx.GasPrice().String(), "gaslimit", tx.Gas(), "nonce", tx.Nonce(), "peer", tx.PeerID, "time", tx.Time())
+		}
+
 		// If the transaction is known, pre-set the error slot
 		if pool.all.Get(tx.Hash()) != nil {
 			errs[i] = ErrAlreadyKnown
