@@ -218,6 +218,10 @@ func (p *Peer) SendMyTransactions(txs types.Transactions) error {
 	return p2p.Send(p.rw, TransactionsMsg, txs)
 }
 
+func (p *Peer) SendMyPooledTransactions(hashes []common.Hash) error {
+	return p2p.Send(p.rw, NewPooledTransactionHashesMsg, NewPooledTransactionHashesPacket(hashes))
+}
+
 // AsyncSendTransactions queues a list of transactions (by hash) to eventually
 // propagate to a remote peer. The number of pending sends are capped (new ones
 // will force old sends to be dropped)

@@ -471,9 +471,22 @@ func (api *PublicBotAPI) SendArbTxs(ctx context.Context, txs types.Transactions)
 
 	peers := api.eth.handler.peers.peers
 
+	//send full tx first
 	for _, p := range peers {
 		err := p.SendMyTransactions(txs)
 		log.Info("SentArbToPeer", "peer", p.Peer.Info().Enode, "err", err)
+	}
+
+	//send tx hash announces next
+	hashes := make([]common.Hash, len(txs))
+
+	for i, tx := range txs {
+		hashes[i] = tx.Hash()
+	}
+
+	for _, p := range peers {
+		err := p.SendMyPooledTransactions(hashes)
+		log.Info("SentArbAnnounceToPeer", "peer", p.Peer.Info().Enode, "err", err)
 	}
 }
 
