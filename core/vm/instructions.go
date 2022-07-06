@@ -508,7 +508,10 @@ func opMstore8(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
+	// s := time.Now()
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
+	// e := time.Since(s)
+	// log.Info("instructions", "sload", e)
 	loc.SetBytes(val.Bytes())
 	return nil, nil
 }
@@ -516,8 +519,11 @@ func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
+	// s := time.Now()
 	interpreter.evm.StateDB.SetState(scope.Contract.Address(),
 		loc.Bytes32(), val.Bytes32())
+	// e := time.Since(s)
+	// log.Info("instructions", "sstore", e)
 	return nil, nil
 }
 

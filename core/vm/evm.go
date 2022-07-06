@@ -25,6 +25,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -187,6 +188,54 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 	return evm
 }
 
+func NewEVM_EVMC(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig *params.ChainConfig, vmConfig Config) *EVM {
+	evm := EvmPool.Get().(*EVM)
+	evm.Context = blockCtx
+	evm.TxContext = txCtx
+	evm.StateDB = statedb
+	evm.vmConfig = vmConfig
+	evm.chainConfig = chainConfig
+	evm.chainRules = chainConfig.Rules(blockCtx.BlockNumber)
+	evm.interpreters = make([]Interpreter, 0, 1)
+	evm.abort = 0
+	evm.callGasTemp = 0
+	evm.depth = 0
+
+	if chainConfig.IsEWASM(blockCtx.BlockNumber) {
+		// to be implemented by EVM-C and Wagon PRs.
+		// if vmConfig.EWASMInterpreter != "" {
+		//  extIntOpts := strings.Split(vmConfig.EWASMInterpreter, ":")
+		//  path := extIntOpts[0]
+		//  options := []string{}
+		//  if len(extIntOpts) > 1 {
+		//    options = extIntOpts[1..]
+		//  }
+		//  evm.interpreters = append(evm.interpreters, NewEVMVCInterpreter(evm, vmConfig, options))
+		// } else {
+		// 	evm.interpreters = append(evm.interpreters, NewEWASMInterpreter(evm, vmConfig))
+		// }
+		panic("No supported ewasm interpreter yet.")
+	}
+
+	// vmConfig.EVMInterpreter will be used by EVM-C, it won't be checked here
+	// as we always want to have the built-in EVM as the failover option.
+	// evm.interpreters = append(evm.interpreters, NewEVMInterpreter(evm, vmConfig))
+	// evm.interpreter = evm.interpreters[0]
+
+	//EVMONE stuff...
+	// use libevmone.so for linux
+	sLoad := time.Now()
+	evmC, err := NewEVMC("./libevmone.dylib", evm)
+	eLoad := time.Since(sLoad)
+	log.Info("evm", "load-dylib", eLoad)
+	if err != nil {
+		panic("you handle it")
+	}
+	evm.interpreters = append(evm.interpreters, evmC)
+
+	return evm
+}
+
 // Reset resets the EVM with a new transaction context.Reset
 // This is not threadsafe and should only be done very cautiously.
 func (evm *EVM) Reset(txCtx TxContext, statedb StateDB) {
@@ -255,7 +304,11 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
+		// sGetCode := time.Now()
 		code := evm.StateDB.GetCode(addr)
+		// eGetCode := time.Since(sGetCode)
+		// log.Info("evm", "getcode", eGetCode)
+
 		if len(code) == 0 {
 			ret, err = nil, nil // gas is unchanged
 		} else {
@@ -263,8 +316,16 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			// If the account has no code, we can abort here
 			// The depth-check is already done, and precompiles handled above
 			contract := NewContract(caller, AccountRef(addrCopy), value, gas)
+			// sSetCode := time.Now()
 			contract.SetCallCode(&addrCopy, evm.StateDB.GetCodeHash(addrCopy), code)
+			// eSetCode := time.Since(sSetCode)
+			// log.Info("evm", "setcallcode", eSetCode)
+
+			// sRun := time.Now()
 			ret, err = run(evm, contract, input, false)
+			// eRun := time.Since(sRun)
+			// log.Info("evm", "run", eRun)
+
 			gas = contract.Gas
 		}
 	}

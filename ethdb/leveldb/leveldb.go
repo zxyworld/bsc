@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
+//go:build !js
 // +build !js
 
 // Package leveldb implements the key-value database layer based on LevelDB.
@@ -186,7 +187,10 @@ func (db *Database) Has(key []byte) (bool, error) {
 
 // Get retrieves the given key if it's present in the key-value store.
 func (db *Database) Get(key []byte) ([]byte, error) {
+	// s := time.Now()
 	dat, err := db.db.Get(key, nil)
+	// e := time.Since(s)
+	// log.Info("db", "key", key, "get", e)
 	if err != nil {
 		return nil, err
 	}

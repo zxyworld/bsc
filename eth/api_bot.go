@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -246,11 +247,16 @@ type SimulateResult struct {
 // 	return rpcSub, nil
 // }
 
-func (s *Simulator) Fork(blockNumber uint64) {
+func (s *Simulator) Fork(blockNumber uint64, useEvmOne bool) {
 
 	header := s.backend.CurrentHeader()
-	block := s.backend.eth.blockchain.GetBlockByNumber(blockNumber)
-	statedb, err := s.backend.eth.blockchain.StateAt(block.Root())
+	//block := s.backend.eth.blockchain.GetBlockByNumber(blockNumber)
+
+	// stateCache := s.backend.eth.blockchain.StateCache()
+	// statedb, err := state.New(block.Root(), stateCache, s.backend.eth.blockchain.Snapshots())
+	statedb, err := s.backend.eth.blockchain.State()
+	// statedb, err := s. backend.eth.blockchain.StateAt(block.Root())
+
 	if err != nil {
 		log.Info("Fork Error", "stateAtError", err)
 	}
@@ -260,7 +266,16 @@ func (s *Simulator) Fork(blockNumber uint64) {
 	blockCtx := core.NewEVMBlockContext(header, s.backend.eth.blockchain, nil)
 	traceContext := vm.TxContext{}
 
-	s.vm = vm.NewEVM(blockCtx, traceContext, statedb, s.backend.eth.blockchain.Config(), *s.backend.eth.blockchain.GetVMConfig())
+	if !useEvmOne {
+		//default EVM
+		s.vm = vm.NewEVM(blockCtx, traceContext, statedb, s.backend.eth.blockchain.Config(), *s.backend.eth.blockchain.GetVMConfig())
+		log.Info("simulat-fork", "evm", "default")
+	} else {
+		//EVMONE
+		s.vm = vm.NewEVM_EVMC(blockCtx, traceContext, statedb, s.backend.eth.blockchain.Config(), *s.backend.eth.blockchain.GetVMConfig())
+		log.Info("simulat-fork", "evm", "evmone")
+	}
+
 }
 
 //Takes a list of transactions and simulates them sequentially. Returns logs output from simulation
@@ -442,13 +457,14 @@ func (s *Simulator) executeSimulation(txs *types.TransactionsByPriceAndNonce, ta
 }
 
 type SimulateSingleTxResult struct {
-	TxHash          common.Hash    `json:"txHash"`
-	ContractAddress common.Address `json:"contractAddress"`
-	GasUsed         uint64         `json:"gasUsed"`
-	Status          uint64         `json:"status"`
-	Duration        time.Duration  `json:"duration"`
-	ForkBlock       uint64         `json:"forkBlock"`
-	Logs            []*types.Log   `json:"logs"`
+	TxHash          common.Hash        `json:"txHash"`
+	FullTx          *types.Transaction `json:"fullTx"`
+	ContractAddress common.Address     `json:"contractAddress"`
+	GasUsed         uint64             `json:"gasUsed"`
+	Status          uint64             `json:"status"`
+	Duration        time.Duration      `json:"duration"`
+	ForkBlock       uint64             `json:"forkBlock"`
+	Logs            []*types.Log       `json:"logs"`
 }
 
 func (api *PublicBotAPI) SendArbTxs(ctx context.Context, txs types.Transactions) {
@@ -461,13 +477,81 @@ func (api *PublicBotAPI) SendArbTxs(ctx context.Context, txs types.Transactions)
 	}
 }
 
-func (api *PublicBotAPI) SimulateSingleTx(ctx context.Context, tx *types.Transaction) (*SimulateSingleTxResult, error) {
+func (api *PublicBotAPI) SimulateSingleTxByHash(ctx context.Context, txHash common.Hash, useEvmOne bool) (*SimulateSingleTxResult, error) {
+
+	startTs := time.Now()
 
 	s := NewSimulator(api.eth.APIBackend)
 
 	block := api.eth.blockchain.CurrentBlock()
 	// log.Info("SimulateSingleTx", "currentBlock", block.NumberU64())
-	s.Fork(block.NumberU64())
+
+	sFork := time.Now()
+	s.Fork(block.NumberU64(), useEvmOne)
+	eFork := time.Since(sFork)
+	log.Info("SimulateSingleTxByHash", "tx", txHash, "fork", eFork)
+
+	sGas := time.Now()
+	gasPool := new(core.GasPool).AddGas(s.backend.CurrentHeader().GasLimit)
+	gasPool.SubGas(params.SystemTxsGas)
+	eGas := time.Since(sGas)
+	log.Info("SimulateSingleTxByHash", "tx", txHash, "gas", eGas)
+
+	sTxHash := time.Now()
+	tx := api.eth.txPool.Get(txHash)
+	eTXHash := time.Since(sTxHash)
+	log.Info("SimulateSingleTxByHash", "tx", txHash, "hash-lookup", eTXHash)
+
+	if tx == nil {
+		return nil, fmt.Errorf("tx hash %v not found in tx pool\n", txHash)
+	}
+
+	sPrep := time.Now()
+	s.db.Prepare(txHash, block.Hash(), 0)
+	ePrep := time.Since(sPrep)
+	log.Info("SimulateSingleTxByHash", "tx", txHash, "prep", ePrep)
+
+	sApply := time.Now()
+	receipt, err := core.ApplyTransaction(s.backend.eth.blockchain.Config(),
+		s.backend.eth.BlockChain(), nil, gasPool,
+		s.db,
+		s.backend.CurrentHeader(), tx,
+		&s.backend.CurrentHeader().GasUsed,
+		*s.backend.eth.blockchain.GetVMConfig())
+	eApply := time.Since(sApply)
+	log.Info("SimulateSingleTxByHash", "tx", txHash, "apply", eApply)
+
+	endTs := time.Since(startTs)
+	log.Info("SimulateSingleTxByHash", "tx", txHash, "endTs", endTs)
+
+	var result *SimulateSingleTxResult
+	if receipt != nil {
+		// log.Info("SimulateSingleTx", "logs", len(receipt.Logs), "status", receipt.Status, "gasused", receipt.GasUsed)
+		result = &SimulateSingleTxResult{
+			TxHash:          receipt.TxHash,
+			FullTx:          tx,
+			ContractAddress: receipt.ContractAddress,
+			GasUsed:         receipt.GasUsed,
+			Status:          receipt.Status,
+			Duration:        time.Since(startTs),
+			ForkBlock:       block.Number().Uint64(),
+			Logs:            receipt.Logs,
+		}
+	} else {
+		// log.Info("SimulateSingleTx", "receipt-nil", tx.Hash())
+		result = nil
+	}
+
+	return result, err
+}
+
+func (api *PublicBotAPI) SimulateSingleTx(ctx context.Context, tx *types.Transaction, useEvmOne bool) (*SimulateSingleTxResult, error) {
+
+	s := NewSimulator(api.eth.APIBackend)
+
+	block := api.eth.blockchain.CurrentBlock()
+	// log.Info("SimulateSingleTx", "currentBlock", block.NumberU64())
+	s.Fork(block.NumberU64(), useEvmOne)
 
 	startTs := time.Now()
 

@@ -196,15 +196,20 @@ func (s *StateObject) GetState(db Database, key common.Hash) common.Hash {
 
 // GetCommittedState retrieves a value from the committed account storage trie.
 func (s *StateObject) GetCommittedState(db Database, key common.Hash) common.Hash {
+	// start := time.Now()
 	// If the fake storage is set, only lookup the state here(in the debugging mode)
 	if s.fakeStorage != nil {
 		return s.fakeStorage[key]
 	}
 	// If we have a pending write or clean cached, return that
 	if value, pending := s.pendingStorage[key]; pending {
+		// end := time.Since(start)
+		// log.Info("comm-state", "pending", key.String(), "time", end)
 		return value
 	}
 	if value, cached := s.originStorage[key]; cached {
+		// end := time.Since(start)
+		// log.Info("comm-state", "origin", key.String(), "time", end)
 		return value
 	}
 	// If no live objects are available, attempt to use snapshots
@@ -238,6 +243,10 @@ func (s *StateObject) GetCommittedState(db Database, key common.Hash) common.Has
 			return common.Hash{}
 		}
 		enc, err = s.db.snap.Storage(s.addrHash, crypto.Keccak256Hash(key.Bytes()))
+		if len(enc) > 0 && err == nil {
+			// end := time.Since(start)
+			// log.Info("comm-state", "read-snap", key.String(), "time", end)
+		}
 	}
 	// If snapshot unavailable or reading from it failed, load from the database
 	if s.db.snap == nil || err != nil {
@@ -254,6 +263,8 @@ func (s *StateObject) GetCommittedState(db Database, key common.Hash) common.Has
 			s.setError(err)
 			return common.Hash{}
 		}
+		// end := time.Since(start)
+		// log.Info("comm-state", "read-db", key.String(), "time", end)
 	}
 	var value common.Hash
 	if len(enc) > 0 {

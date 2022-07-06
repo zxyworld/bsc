@@ -234,6 +234,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// 5. there is no overflow when calculating intrinsic gas
 	// 6. caller has enough balance to cover asset transfer for **topmost** call
 
+	// s0 := time.Now()
+
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
 		return nil, err
@@ -272,7 +274,12 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	} else {
 		// Increment the nonce for the next transaction
 		st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
+		// e0 := time.Since(s0)
+		// log.Info("state-trans", "time-pre-call", e0)
+		// s1 := time.Now()
 		ret, st.gas, vmerr = st.evm.Call(sender, st.to(), st.data, st.gas, st.value)
+		// e1 := time.Since(s1)
+		// log.Info("state-trans", "time-call", e1)
 	}
 	st.refundGas()
 

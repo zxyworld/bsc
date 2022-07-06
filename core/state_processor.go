@@ -443,18 +443,25 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 	evm.Reset(txContext, statedb)
 
 	// Apply the transaction to the current state (included in the env).
+	// sApply := time.Now()
 	result, err := ApplyMessage(evm, msg, gp)
+	// eApply := time.Since(sApply)
+	// log.Info("applyTransaction", "applyMessage", eApply)
+
 	if err != nil {
 		return nil, err
 	}
 
 	// Update the state with pending changes.
 	var root []byte
+	// sRoot := time.Now()
 	if config.IsByzantium(header.Number) {
 		statedb.Finalise(true)
 	} else {
 		root = statedb.IntermediateRoot(config.IsEIP158(header.Number)).Bytes()
 	}
+	// eRoot := time.Since(sRoot)
+	// log.Info("applyTransaction", "root", eRoot)
 	*usedGas += result.UsedGas
 
 	// Create a new receipt for the transaction, storing the intermediate root and gas used
@@ -474,12 +481,20 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, bc ChainCon
 	}
 
 	// Set the receipt logs and create the bloom filter.
+	// sLogs := time.Now()
 	receipt.Logs = statedb.GetLogs(tx.Hash())
+	// eLogs := time.Since(sLogs)
+	// log.Info("applyTransaction", "logs", eLogs)
+
 	receipt.BlockHash = statedb.BlockHash()
 	receipt.BlockNumber = header.Number
 	receipt.TransactionIndex = uint(statedb.TxIndex())
+
 	for _, receiptProcessor := range receiptProcessors {
+		// sRec := time.Now()
 		receiptProcessor.Apply(receipt)
+		// eRec := time.Since(sRec)
+		// log.Info("applyTransaction", "receipt-proc", eRec)
 	}
 	return receipt, err
 }
